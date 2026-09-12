@@ -4,8 +4,12 @@ AS = nasm
 BUILD_DIR = build
 KERNEL ?= $(BUILD_DIR)/kernel.bin
 
-# Find all .c and .asm files recursively from the current directory
-C_SOURCES = $(shell find . -name "*.c" -not -path "./$(BUILD_DIR)/*")
+MOD_DIR = build/mod
+MOD_SOURCES = $(wildcard modules/*.c)
+MOD_OBJS = $(patsubst modules/%.c, $(MOD_DIR)/%.o, $(MOD_SOURCES))
+
+# Find all .c and .asm files, excluding build and modules directories
+C_SOURCES = $(shell find . -name "*.c" -not -path "./$(BUILD_DIR)/*" -not -path "./modules/*")
 ASM_SOURCES = $(shell find . -name "*.asm" -not -path "./$(BUILD_DIR)/*")
 
 C_OBJECTS = $(patsubst ./%.c, $(BUILD_DIR)/c/%.o, $(C_SOURCES))
@@ -20,9 +24,10 @@ all: $(BUILD_DIR) $(KERNEL)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
+	mkdir -p $(MOD_DIR)
 
-$(KERNEL): $(OBJECTS)
-	$(CC) $(LDFLAGS) -o $@ $^
+$(KERNEL): $(OBJECTS) $(MOD_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJECTS) $(MOD_OBJS)
 
 $(BUILD_DIR)/c/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -32,7 +37,20 @@ $(BUILD_DIR)/asm/%.o: %.asm
 	@mkdir -p $(dir $@)
 	$(AS) $(ASFLAGS) $< -o $@
 
+$(MOD_DIR)/%.o: modules/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+patch_modules:
+	@mkdir -p $(MOD_DIR)
+	@echo "Checking modules in modules/..."
+	@if [ -z "$(MOD_SOURCES)" ]; then \
+		echo "No modules found in modules/. Add .c files there to compile them as modules."; \
+	else \
+		echo "Found module sources: $(MOD_SOURCES)"; \
+	fi
+
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all clean
+.PHONY: all clean patch_modules
