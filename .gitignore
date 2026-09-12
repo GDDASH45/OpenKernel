@@ -1,0 +1,8 @@
+# Build artifacts
+**/*.o
+**/*.a
+**/*.bin
+**/*.elf
+build/*
+*.iso
+iso/
