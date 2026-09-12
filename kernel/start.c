@@ -39,13 +39,13 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
 
     beep(440, 150);
 
-    //info_module_init();
-
     sleep_ms(1000);
 
     k_clear_screen();
 
     sleep_ms(2000);
+
+    info_module_init();
 
     for (;;)
     {
