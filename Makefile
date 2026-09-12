@@ -28,6 +28,7 @@ all: $(KERNEL)
 $(KERNEL): $(OBJECTS) $(MOD_OBJS)
 	@echo "LD $(KERNEL)"
 	@$(CC) $(LDFLAGS) -o $@ $(OBJECTS) $(MOD_OBJS)
+	@echo "kernel Image is ready!"
 
 $(BUILD_DIR)/c/%.o: %.c
 	@mkdir -p $(dir $@)

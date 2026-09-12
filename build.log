@@ -1,9 +1,14 @@
-kernel/start.c: In function ‘kernel_main’:
-kernel/start.c:31:14: warning: unused variable ‘initrd_end’ [-Wunused-variable]
-   31 |     uint32_t initrd_end = mod->mod_end;
-      |              ^~~~~~~~~~
-/usr/bin/ld: warning: build/asm/kernel/entry.o: missing .note.GNU-stack section implies executable stack
-/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
-/usr/bin/ld: build/asm/kernel/entry.o: warning: relocation in read-only section `.text'
-/usr/bin/ld: warning: build/kernel.bin has a LOAD segment with RWX permissions
-/usr/bin/ld: warning: creating DT_TEXTREL in a PIE
+fs/vfs.c: In function ‘vfs_create_node’:
+fs/vfs.c:10:46: warning: unused parameter ‘name’ [-Wunused-parameter]
+   10 | struct vfs_node* vfs_create_node(const char *name, uint32_t flags, struct vfs_node *parent) {
+      |                                  ~~~~~~~~~~~~^~~~
+fs/vfs.c:10:61: warning: unused parameter ‘flags’ [-Wunused-parameter]
+   10 | struct vfs_node* vfs_create_node(const char *name, uint32_t flags, struct vfs_node *parent) {
+      |                                                    ~~~~~~~~~^~~~~
+fs/vfs.c:10:85: warning: unused parameter ‘parent’ [-Wunused-parameter]
+   10 | struct vfs_node* vfs_create_node(const char *name, uint32_t flags, struct vfs_node *parent) {
+      |                                                                    ~~~~~~~~~~~~~~~~~^~~~~~
+fs/vfs.c: At top level:
+fs/vfs.c:4:24: warning: ‘root_node’ defined but not used [-Wunused-variable]
+    4 | static struct vfs_node root_node = { "/", VFS_DIRECTORY, 0, 0, 0, 0, 0 };
+      |                        ^~~~~~~~~
