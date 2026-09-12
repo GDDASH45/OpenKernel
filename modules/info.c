@@ -1,6 +1,7 @@
 #include <write/write.h>
 #include <ksys/version.h>
 #include <kernel/time.h>
+#include <ksys/system-info.h>
 
 void info_module_init(void) {
     k_print("----------------------------------------\n");
@@ -11,4 +12,22 @@ void info_module_init(void) {
     k_print("----------------------------------------\n");
     k_print("Kernel version: ");
     k_print(K_VER);
+    k_print("----------------------------------------\n");
+    //sleep_ms(2000);
+    //k_clear_screen();
+    k_print("----------------------------------------\n");
+    k_print("Codename: ");
+    k_print(CODENAME);
+    k_print("----------------------------------------\n");
+    sleep_ms(2000);
+    k_print("----------------------------------------\n");
+    k_print("Release: ");
+    k_print(RELEASE);
+    k_print("----------------------------------------\n");
+    sleep_ms(2000);
+    k_clear_screen();
+    k_print("----------------------------------------\n");
+    k_print("Check out the kernel source at: ");
+    k_print(GITHUB_REPO);
+    k_print("----------------------------------------\n");
 }
