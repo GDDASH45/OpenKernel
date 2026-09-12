@@ -42,7 +42,9 @@ struct vfs_node* vfs_create_node(const char *name, uint32_t flags, struct vfs_no
 }
 
 void mount_essential_folders(void) {
+#ifdef DEVDIR
     struct vfs_node *dev_dir = vfs_create_node("device", VFS_DIRECTORY, &root_node);
+#endif
     vfs_create_node("sys", VFS_DIRECTORY, &root_node);
     k_print("mounted essential folders!\n");
 #ifdef ENABLE_FB
