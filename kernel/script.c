@@ -1,5 +1,6 @@
 #include <kernel/script.h>
 #include <write/write.h>
+#include <kernel/exec.h>
 
 // Simple string comparison helper
 static int str_starts_with(const char *str, const char *prefix) {
@@ -17,7 +18,7 @@ static int str_equals(const char *s1, const char *s2) {
     return *(const unsigned char*)s1 == *(const unsigned char*)s2;
 }
 
-void script_run(const char *script_data, uint32_t size) {
+void script_run(const char *script_data, uint32_t size, uint32_t initrd_start) {
     k_print("Running startup script...\n");
 
     const char *ptr = script_data;
@@ -40,6 +41,9 @@ void script_run(const char *script_data, uint32_t size) {
                     // Print text after "print "
                     k_print(line_buf + 6);
                     k_print("\n");
+                } else if (str_starts_with(line_buf, "exec "))
+                {
+                    run_binary(initrd_start, line_buf + 5);
                 }
             }
 

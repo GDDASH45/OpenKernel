@@ -22,4 +22,7 @@ struct tar_header {
     char prefix[155];
 };
 
+void tar_parse(uint32_t address);
+const char* tar_get_file(uint32_t address, const char *target_name, uint32_t *out_size);
+
 #endif

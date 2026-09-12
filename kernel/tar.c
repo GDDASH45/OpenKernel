@@ -14,6 +14,18 @@ static uint32_t tar_to_int(const char *in) {
     return size;
 }
 
+static int str_match(const char *s1, const char *s2) {
+    // Skip leading "./" if present in tar headers
+    if (s1[0] == '.' && s1[1] == '/') s1 += 2;
+    if (s2[0] == '.' && s2[1] == '/') s2 += 2;
+
+    while (*s1 && (*s1 == *s2)) { 
+        s1++; 
+        s2++; 
+    }
+    return *s1 == *s2;
+}
+
 // Check if filename contains or ends with "init"
 static int is_init_file(const char *name) {
     int len = 0;
@@ -32,7 +44,29 @@ static int is_init_file(const char *name) {
     return 0;
 }
 
+const char* tar_get_file(uint32_t address, const char *target_name, uint32_t *out_size)
+{
+    struct tar_header *header = (struct tar_header *)address;
+
+    while (header->name[0] != '\0')
+    {
+        uint32_t size = tar_to_int(header->size);
+
+        if (str_match(header->name, target_name))
+        {
+            *out_size = size;
+            return (const char *)(address + 512);
+        }
+
+        uint32_t blocks = (size + 512 - 1) / 512;
+        address += (blocks + 1) * 512;
+        header = (struct tar_header *)address;
+    }
+    return 0;
+}
+
 void tar_parse(uint32_t address) {
+    uint32_t initrd_base = address;
     struct tar_header *header = (struct tar_header *)address;
     int init_found = 0;
 
@@ -44,7 +78,7 @@ void tar_parse(uint32_t address) {
             k_print("Found init script: ");
             k_print(header->name);
             k_print("\n");
-            script_run((const char *)file_data_address, size);
+            script_run((const char *)file_data_address, size, initrd_base);
             init_found = 1;
             break;
         }
