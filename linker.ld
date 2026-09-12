@@ -2,11 +2,13 @@ ENTRY(_start)
 
 SECTIONS
 {
-    /* Typically loaded at 1MB for traditional x86 kernels */
     . = 0x100000;
 
-    .text BLOCK(4K) : ALIGN(4K) {
+    .multiboot : {
         *(.multiboot)
+    }
+
+    .text BLOCK(4K) : ALIGN(4K) {
         *(.text)
     }
 
