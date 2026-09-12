@@ -12,7 +12,7 @@ C_OBJECTS = $(patsubst ./%.c, $(BUILD_DIR)/c/%.o, $(C_SOURCES))
 ASM_OBJECTS = $(patsubst ./%.asm, $(BUILD_DIR)/asm/%.o, $(ASM_SOURCES))
 OBJECTS = $(ASM_OBJECTS) $(C_OBJECTS)
 
-CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie
+CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie -Iinclude
 LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 -nostdlib -fno-pie
 ASFLAGS = -f elf32
 
