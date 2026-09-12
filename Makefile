@@ -27,19 +27,23 @@ $(BUILD_DIR):
 	mkdir -p $(MOD_DIR)
 
 $(KERNEL): $(OBJECTS) $(MOD_OBJS)
-	$(CC) $(LDFLAGS) -o $@ $(OBJECTS) $(MOD_OBJS)
+	@echo "LD $(KERNEL)"
+	@$(CC) $(LDFLAGS) -o $@ $(OBJECTS) $(MOD_OBJS)
 
 $(BUILD_DIR)/c/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/asm/%.o: %.asm
 	@mkdir -p $(dir $@)
-	$(AS) $(ASFLAGS) $< -o $@
+	@echo "AS $<"
+	@$(AS) $(ASFLAGS) $< -o $@
 
 $(MOD_DIR)/%.o: modules/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
 
 patch_modules:
 	@mkdir -p $(MOD_DIR)

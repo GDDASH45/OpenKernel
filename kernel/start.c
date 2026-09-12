@@ -5,6 +5,8 @@
 #include <kernel.h>
 #include <drivers/keyboard.h>
 
+extern void info_module_init(void);
+
 void kernel_main(uint32_t magic, uint32_t multiboot_addr) 
 {
     k_clear_screen();
@@ -31,6 +33,8 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
     
     // Parse the TAR archive in memory
     tar_parse(initrd_start);
+
+    info_module_init();
 
     for (;;)
     {
