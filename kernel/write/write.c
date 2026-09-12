@@ -3,6 +3,34 @@
 static int cursor_row = 0;
 static int cursor_col = 0;
 
+#define VGA_ADDRESS 0xB8000
+#define MAX_ROWS 25
+#define MAX_COLS 80
+#define WHITE_ON_BLACK 0x0F
+
+void scroll_screen(void) {
+    volatile unsigned char *vga = (volatile unsigned char *)VGA_ADDRESS;
+
+    // Shift every row up by one (each cell is 2 bytes: char + attribute)
+    for (int r = 1; r < MAX_ROWS; r++) {
+        for (int c = 0; c < MAX_COLS; c++) {
+            int dest = ((r - 1) * MAX_COLS + c) * 2;
+            int src = (r * MAX_COLS + c) * 2;
+            vga[dest] = vga[src];
+            vga[dest + 1] = vga[src + 1];
+        }
+    }
+
+    // Clear the bottom row
+    for (int c = 0; c < MAX_COLS; c++) {
+        int index = ((MAX_ROWS - 1) * MAX_COLS + c) * 2;
+        vga[index] = ' ';
+        vga[index + 1] = WHITE_ON_BLACK;
+    }
+
+    cursor_row = MAX_ROWS - 1;
+}
+
 void k_clear_screen(void) {
     volatile unsigned char *vga = (volatile unsigned char *)VGA_ADDRESS;
     for (int i = 0; i < MAX_ROWS * MAX_COLS; i++) {
@@ -32,7 +60,7 @@ void k_print_char(char c) {
     }
 
     if (cursor_row >= MAX_ROWS) {
-        cursor_row = 0; // Wrap back to top (or implement scrolling logic)
+        scroll_screen();
     }
 }
 
