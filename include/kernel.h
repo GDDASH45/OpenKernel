@@ -9,6 +9,11 @@ static inline void panic(const char* message) {
     k_print("\n");
     k_print("END KERNEL PANIC -- ");
     k_print(message);
+
+    for (;;)
+    {
+        __asm__ volatile ("hlt");
+    }
 }
 
 #endif
