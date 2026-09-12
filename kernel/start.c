@@ -3,12 +3,17 @@
 #include <kernel/multiboot.h>
 #include <kernel/tar.h>
 #include <kernel.h>
+#include <drivers/keyboard.h>
 
 void kernel_main(uint32_t magic, uint32_t multiboot_addr) 
 {
     k_clear_screen();
     if (magic != 0x2BADB002) {
         panic("Invalid multiboot magic number!");
+    }
+
+    if (init_keyboard() != 0) {
+        panic("Keyboard initialization failed!");
     }
 
     struct multiboot_info *mbi = (struct multiboot_info *)multiboot_addr;
