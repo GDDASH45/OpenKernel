@@ -1,6 +1,7 @@
-ENTRY(start)
+ENTRY(_start)
 
-SECTIONS {
+SECTIONS
+{
     . = 1M;
 
     .text : {
