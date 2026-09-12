@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <write/write.h>
 #include <kernel/multiboot.h>
+#include <kernel/tar.h>
 #include <kernel.h>
 
 void kernel_main(uint32_t magic, uint32_t multiboot_addr) 
@@ -21,9 +22,10 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
     uint32_t initrd_start = mod->mod_start;
     uint32_t initrd_end = mod->mod_end;
 
-
     k_print("Initramfs loaded successfully!\n");
     
+    // Parse the TAR archive in memory
+    tar_parse(initrd_start);
 
     for (;;)
     {
