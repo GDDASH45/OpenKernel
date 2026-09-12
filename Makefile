@@ -4,7 +4,7 @@ AS = nasm
 BUILD_DIR = build
 KERNEL ?= $(BUILD_DIR)/kernel.bin
 
-MOD_DIR = build/mod
+MOD_DIR = $(BUILD_DIR)/mod
 MOD_SOURCES = $(wildcard modules/*.c)
 MOD_OBJS = $(patsubst modules/%.c, $(MOD_DIR)/%.o, $(MOD_SOURCES))
 
@@ -16,15 +16,14 @@ C_OBJECTS = $(patsubst ./%.c, $(BUILD_DIR)/c/%.o, $(C_SOURCES))
 ASM_OBJECTS = $(patsubst ./%.asm, $(BUILD_DIR)/asm/%.o, $(ASM_SOURCES))
 OBJECTS = $(ASM_OBJECTS) $(C_OBJECTS)
 
-CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie -Iinclude
-LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 -nostdlib -fno-pie
+# Automatic dependency files for header tracking
+DEPS = $(C_OBJECTS:.o=.d) $(MOD_OBJS:.o=.d)
+
+CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie -Iinclude -MMD -MP
+LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 -nostdlib -fno-pie -no-pie
 ASFLAGS = -f elf32
 
-all: $(BUILD_DIR) $(KERNEL)
-
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
-	mkdir -p $(MOD_DIR)
+all: $(KERNEL)
 
 $(KERNEL): $(OBJECTS) $(MOD_OBJS)
 	@echo "LD $(KERNEL)"
@@ -44,6 +43,9 @@ $(MOD_DIR)/%.o: modules/%.c
 	@mkdir -p $(dir $@)
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
+
+# Include dependency files safely
+-include $(DEPS)
 
 patch_modules:
 	@mkdir -p $(MOD_DIR)

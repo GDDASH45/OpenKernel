@@ -44,6 +44,11 @@ void k_clear_screen(void) {
 void k_print_char(char c) {
     volatile unsigned char *vga = (volatile unsigned char *)VGA_ADDRESS;
 
+    // Check scroll condition before writing to prevent out-of-bounds memory corruption
+    if (cursor_row >= MAX_ROWS) {
+        scroll_screen();
+    }
+
     if (c == '\n') {
         cursor_row++;
         cursor_col = 0;
@@ -59,6 +64,7 @@ void k_print_char(char c) {
         }
     }
 
+    // Catch edge cases where wrapping pushed cursor past the limit
     if (cursor_row >= MAX_ROWS) {
         scroll_screen();
     }

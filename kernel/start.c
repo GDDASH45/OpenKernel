@@ -4,6 +4,7 @@
 #include <kernel/tar.h>
 #include <kernel.h>
 #include <drivers/keyboard.h>
+#include <kernel/time.h>
 
 extern void info_module_init(void);
 
@@ -27,17 +28,22 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
     struct multiboot_module *mod = (struct multiboot_module *)mbi->mods_addr;
 
     uint32_t initrd_start = mod->mod_start;
-    uint32_t initrd_end = mod->mod_end;
 
     k_print("Initramfs loaded successfully!\n");
     
     // Parse the TAR archive in memory
     tar_parse(initrd_start);
 
-    info_module_init();
+    //info_module_init();
+
+    sleep_ms(1000);
+
+    k_clear_screen();
 
     for (;;)
     {
-        __asm__ volatile ("hlt");
+        // If interrupts aren't enabled yet, use a simple busy loop
+        // instead of hlt to prevent a permanent freeze:
+        __asm__ volatile ("nop");
     }
 }
