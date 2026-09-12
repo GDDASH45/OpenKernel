@@ -38,14 +38,6 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
     sound_init();
 
     beep(440, 150);
-    beep(430, 150);
-    beep(420, 150);
-    beep(410, 150);
-    beep(400, 150);
-    beep(410, 150);
-    beep(420, 150);
-    beep(430, 150);
-    beep(440, 150);
 
     //info_module_init();
 
