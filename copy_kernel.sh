@@ -1,0 +1,1 @@
+cp build/kernel.bin iso/boot/kernel.bin

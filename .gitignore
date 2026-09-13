@@ -8,7 +8,3 @@ build/*
 iso/**
 initfs/**
 apps/**
-run.sh
-copy_kernel.sh
-build_fs.sh
-make_iso.sh

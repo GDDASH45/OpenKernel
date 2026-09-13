@@ -1,0 +1,58 @@
+# OpenKernel
+
+OpenKernel is a custom, minimalist microkernel designed and implemented in **C**. It features a clean separation between the kernel core and userspace, a custom `PMX` binary loader, and `tar` initramfs parsing.
+
+## Architecture Overview
+
+* **Microkernel Core**: Manages primitive CPU exceptions, memory quotas, and execution handoff.
+* **Userspace Separation**: Core services and utilities execute entirely in userspace, keeping the kernel decoupled from application logic.
+* **PMX Binary Loader**: Custom binary format loader responsible for mapping and executing programs.
+* **Initramfs VFS**: Parses standard `tar` archives to mount an initial ramdisk filesystem during boot.
+
+## Contribution Policy
+
+OpenKernel is written strictly in **C**. 
+
+> **Important**: All contributions, kernel subsystems, and userspace programs must be written in standard C. Code submitted in any other programming language will not be accepted.
+
+## Building and Running
+
+You must run on a linux environment. Run this command if on Ubuntu
+
+sudo apt update && sudo apt install build-essential nasm qemu-system-x86 genisoimage xorriso
+
+You can also find a minimal initramfs.img in bin/initramfs.img
+
+For now as of 0.0.1-rc1 it can only understand a ustar tar archive
+The initramfs must have a init script
+
+run these scripts in order:
+
+make -j$(nproc)
+
+make a iso/boot/grub.cfg that is something like this:
+
+-----
+set timeout=0
+set default=0
+
+clear
+
+menuentry "Open Kernel" {
+    multiboot /boot/kernel.bin
+    module /boot/initramfs.img
+    boot
+}
+----
+
+./copy_kernel.sh
+
+./make_iso.sh
+
+this should produce os.iso
+
+
+Ensure you have a cross-compiler toolchain and QEMU installed, then run the build and boot script:
+
+```bash
+./run.sh

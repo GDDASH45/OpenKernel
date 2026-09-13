@@ -1,0 +1,1 @@
+qemu-system-x86_64 -audiodev sdl,id=snd0 -machine pcspk-audiodev=snd0 -cdrom os.iso

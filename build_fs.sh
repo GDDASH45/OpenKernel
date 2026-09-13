@@ -1,0 +1,1 @@
+tar --format=ustar -C initfs -cvf iso/boot/initramfs.img .
