@@ -19,7 +19,7 @@ OBJECTS = $(ASM_OBJECTS) $(C_OBJECTS)
 # Automatic dependency files for header tracking
 DEPS = $(C_OBJECTS:.o=.d) $(MOD_OBJS:.o=.d)
 
-CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie -Iinclude -MMD -MP
+CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie -Iinclude -MMD -MP 
 LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 -nostdlib -fno-pie -no-pie
 ASFLAGS = -f elf32
 

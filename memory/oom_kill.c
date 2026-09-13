@@ -5,6 +5,9 @@
 #define MAX_SYSTEM_RAM 0x01000000
 
 void oom_kill(const char *process_name, uint32_t requested_addr, uint32_t size) {
+    (void)requested_addr;
+    (void)size;
+    
     k_print("[OOM] Memory limit exceeded by process: ");
     k_print(process_name);
     k_print("\n[OOM] Requested Address: 0x");
