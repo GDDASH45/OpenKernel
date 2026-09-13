@@ -1,5 +1,6 @@
 #include "binfmt_pmx.h"
 #include <stdint.h>
+#include <memory/oom_kill.h>
 
 struct pmx_header {
     char magic[4];          // "PMX1"
@@ -17,6 +18,11 @@ int binfmt_pmx_load(const void *file_data, uint32_t file_size, void (**entry_out
     if (header->magic[0] != 'P' || header->magic[1] != 'M' || 
         header->magic[2] != 'X' || header->magic[3] != '1') {
         return -2; // Invalid magic bytes
+    }
+
+    // Enforce memory quotas before touching destination RAM
+    if (check_memory_quota(header->load_addr, header->code_size) != 0) {
+        oom_kill("PMX Binary", header->load_addr, header->code_size);
     }
 
     const char *flat_binary_src = (const char *)file_data + sizeof(struct pmx_header);
