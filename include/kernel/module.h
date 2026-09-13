@@ -15,7 +15,8 @@ typedef struct kernel_module {
 } kernel_module_t;
 
 #define KERNEL_MODULE(mod_name, init_fn, exit_fn) \
-    static kernel_module_t __mod_##mod_name = { \
+    static kernel_module_t __mod_##mod_name \
+        __attribute__((section(".kernel_modules"), used)) = { \
         .name = #mod_name, \
         .init = init_fn, \
         .exit = exit_fn, \
