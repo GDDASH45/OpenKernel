@@ -10,6 +10,8 @@ SECTIONS
 
     .text BLOCK(4K) : ALIGN(4K) {
         *(.text)
+        *(.init.text)
+        *(.exit.text)
     }
 
     .rodata BLOCK(4K) : ALIGN(4K) {
