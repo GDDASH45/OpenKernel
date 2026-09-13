@@ -4,10 +4,10 @@
 
 const char *metadata_marker = "start_metadata";
 
-const char *os_version = "(OpenKernel 0.0.1-alpha)";
+const char *os_version = "(OpenKernel 0.0.1-rc1.2)";
 
 const char *kernel_name = "OpenKernel";
-const char *kernel_version = "0.0.1-alpha";
+const char *kernel_version = "0.0.1-rc1.2";
 const char *kernel_banner = "OpenKernel v0.0.1 | x86 Bare Metal\n";
 
 const char *msg_boot_ok = "[OK] System booted successfully.\n";
