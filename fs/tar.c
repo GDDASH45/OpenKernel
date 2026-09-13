@@ -15,7 +15,6 @@ static uint32_t tar_to_int(const char *in) {
 }
 
 static int str_match(const char *s1, const char *s2) {
-    // Skip leading "./" if present in tar headers
     if (s1[0] == '.' && s1[1] == '/') s1 += 2;
     if (s2[0] == '.' && s2[1] == '/') s2 += 2;
 
@@ -26,16 +25,13 @@ static int str_match(const char *s1, const char *s2) {
     return *s1 == *s2;
 }
 
-// Check if filename contains or ends with "init"
 static int is_init_file(const char *name) {
     int len = 0;
     while (name[len] != '\0' && len < 100) len++;
     
     if (len >= 4) {
-        // Check exact match of the tail "init"
         if (name[len-4] == 'i' && name[len-3] == 'n' && 
             name[len-2] == 'i' && name[len-1] == 't') {
-            // Ensure it's either "init" or preceded by a path separator '/'
             if (len == 4 || name[len-5] == '/') {
                 return 1;
             }
@@ -47,6 +43,13 @@ static int is_init_file(const char *name) {
 const char* tar_get_file(uint32_t address, const char *target_name, uint32_t *out_size)
 {
     struct tar_header *header = (struct tar_header *)address;
+
+    // Validate magic signature before traversal
+    if (header->magic[0] != 'u' || header->magic[1] != 's' || 
+        header->magic[2] != 't' || header->magic[3] != 'a' || 
+        header->magic[4] != 'r') {
+        panic("Invalid or unrecognized TAR archive format in tar_get_file!");
+    }
 
     while (header->name[0] != '\0')
     {
@@ -68,6 +71,14 @@ const char* tar_get_file(uint32_t address, const char *target_name, uint32_t *ou
 void tar_parse(uint32_t address) {
     uint32_t initrd_base = address;
     struct tar_header *header = (struct tar_header *)address;
+
+    // Verify USTAR magic bytes to prevent parsing invalid/malicious memory structures
+    if (header->magic[0] != 'u' || header->magic[1] != 's' || 
+        header->magic[2] != 't' || header->magic[3] != 'a' || 
+        header->magic[4] != 'r') {
+        panic("Invalid or unrecognized TAR archive format!");
+    }
+
     int init_found = 0;
     int found_boot = 0;
     int found_root = 0;
@@ -80,7 +91,6 @@ void tar_parse(uint32_t address) {
         const char *name = header->name;
         if (name[0] == '.' && name[1] == '/') name += 2;
 
-        // Check for specific system directories or files within them
         if ((name[0] == 'b' && name[1] == 'o' && name[2] == 'o' && name[3] == 't') && 
             (name[4] == '/' || name[4] == '\0')) {
             found_boot = 1;

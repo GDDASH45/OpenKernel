@@ -6,8 +6,15 @@
 #include <driver/keyboard.h>
 #include <kernel/time.h>
 #include <driver/sound.h>
+#include <assert.h>
+
+// Fix Undefined errors
+#ifndef NULL
+#define NULL ((void *)0)
+#endif
 
 extern void info_module_init(void);
+extern void initrd_set_base(uint32_t addr); // Bridge for execve
 
 void kernel_main(uint32_t magic, uint32_t multiboot_addr) 
 {
@@ -21,14 +28,19 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
     }
 
     struct multiboot_info *mbi = (struct multiboot_info *)multiboot_addr;
+    assert(mbi != NULL);
 
     if (!(mbi->flags & (1 << 3)) || mbi->mods_count == 0) {
         panic("No initramfs provided by GRUB!");
     }
 
     struct multiboot_module *mod = (struct multiboot_module *)mbi->mods_addr;
+    assert(mod != NULL);
 
     uint32_t initrd_start = mod->mod_start;
+    
+    // Register base address for process loading via execve
+    initrd_set_base(initrd_start);
 
     k_print("Initramfs loaded successfully!\n");
     
@@ -36,21 +48,16 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
     tar_parse(initrd_start);
 
     sound_init();
-
     beep(440, 150);
-
     sleep_ms(1000);
 
     k_clear_screen();
-
     sleep_ms(2000);
 
     info_module_init();
 
     for (;;)
     {
-        // If interrupts aren't enabled yet, use a simple busy loop
-        // instead of hlt to prevent a permanent freeze:
         __asm__ volatile ("nop");
     }
 }
