@@ -28,6 +28,7 @@ all: $(KERNEL)
 $(KERNEL): $(OBJECTS) $(MOD_OBJS)
 	@echo "LD $(KERNEL)"
 	@$(CC) $(LDFLAGS) -o $@ $(OBJECTS) $(MOD_OBJS)
+	nm -n $(KERNEL) > Kernel.syms
 	@echo "kernel Image is ready!"
 
 $(BUILD_DIR)/c/%.o: %.c
@@ -58,6 +59,6 @@ patch_modules:
 	fi
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) Kernel.syms
 
 .PHONY: all clean patch_modules
