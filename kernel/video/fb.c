@@ -1,10 +1,15 @@
 #include <kvideo/fb.h>
+#include <stdint.h>
 
-#define VGA_GFX_MEM 0xA0000
+#define VGA_GFX_MEM ((uint8_t *)0xA0000)
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 200
 
 static uint32_t cursor_offset = 0;
+
+// External assembly routines optimized for 8-bit Mode 13h
+extern void fb_put_pixel_asm(uint8_t *fb_addr, uint32_t width, int x, int y, uint8_t color);
+extern void fb_clear_asm(uint8_t *fb_addr, uint32_t total_pixels, uint8_t color);
 
 static inline void outb(uint16_t port, uint8_t val) {
     __asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
@@ -56,10 +61,11 @@ void set_mode_13h(void) {
 
 void fb_init(void) {
     cursor_offset = 0;
+    fb_clear_asm(VGA_GFX_MEM, SCREEN_WIDTH * SCREEN_HEIGHT, 0);
 }
 
 int fb_write(const char *buf, uint32_t size) {
-    volatile uint8_t *screen = (volatile uint8_t *)VGA_GFX_MEM;
+    volatile uint8_t *screen = VGA_GFX_MEM;
     for (uint32_t i = 0; i < size; i++) {
         if (cursor_offset < (SCREEN_WIDTH * SCREEN_HEIGHT)) {
             screen[cursor_offset++] = (uint8_t)buf[i];
@@ -70,8 +76,7 @@ int fb_write(const char *buf, uint32_t size) {
 
 void fb_put_pixel(int x, int y, uint8_t color) {
     if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT) {
-        volatile uint8_t *screen = (volatile uint8_t *)VGA_GFX_MEM;
-        screen[(y * SCREEN_WIDTH) + x] = color;
+        fb_put_pixel_asm(VGA_GFX_MEM, SCREEN_WIDTH, x, y, color);
     }
 }
 
