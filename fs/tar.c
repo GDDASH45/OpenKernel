@@ -69,10 +69,30 @@ void tar_parse(uint32_t address) {
     uint32_t initrd_base = address;
     struct tar_header *header = (struct tar_header *)address;
     int init_found = 0;
+    int found_boot = 0;
+    int found_root = 0;
+    int found_device = 0;
 
     while (header->name[0] != '\0') {
         uint32_t size = tar_to_int(header->size);
         uint32_t file_data_address = address + 512;
+
+        const char *name = header->name;
+        if (name[0] == '.' && name[1] == '/') name += 2;
+
+        // Check for specific system directories or files within them
+        if ((name[0] == 'b' && name[1] == 'o' && name[2] == 'o' && name[3] == 't') && 
+            (name[4] == '/' || name[4] == '\0')) {
+            found_boot = 1;
+        }
+        if ((name[0] == 'r' && name[1] == 'o' && name[2] == 'o' && name[3] == 't') && 
+            (name[4] == '/' || name[4] == '\0')) {
+            found_root = 1;
+        }
+        if ((name[0] == 'd' && name[1] == 'e' && name[2] == 'v' && name[3] == 'i' && name[4] == 'c' && name[5] == 'e') && 
+            (name[6] == '/' || name[6] == '\0')) {
+            found_device = 1;
+        }
 
         if (is_init_file(header->name)) {
             k_print("Found init script: ");
@@ -80,13 +100,20 @@ void tar_parse(uint32_t address) {
             k_print("\n");
             script_run((const char *)file_data_address, size, initrd_base);
             init_found = 1;
-            break;
         }
 
         uint32_t blocks = (size + 512 - 1) / 512;
         address += (blocks + 1) * 512;
         header = (struct tar_header *)address;
     }
+
+    if (found_boot) k_print("[VFS] Detected /boot directory\n");
+    if (found_root) k_print("[VFS] Detected /root directory\n");
+    if (found_device) k_print("[VFS] Detected /device directory\n");
+
+    if (!found_boot) panic("/boot/ not found!");
+    if (!found_root) panic("/root/ not found!");
+    if (!found_device) panic("/device/ not found!");
 
     if (!init_found) {
         panic("No init script found!\n");
