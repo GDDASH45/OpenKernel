@@ -56,6 +56,8 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
 
     info_module_init();
 
+    k_print("Here we go!\n");
+
     for (;;)
     {
         __asm__ volatile ("nop");
