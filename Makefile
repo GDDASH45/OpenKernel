@@ -15,6 +15,8 @@ ASM_SOURCES = $(shell find . -name "*.asm" -not -path "./$(BUILD_DIR)/*")
 C_OBJECTS = $(patsubst ./%.c, $(BUILD_DIR)/c/%.o, $(C_SOURCES))
 ASM_OBJECTS = $(patsubst ./%.asm, $(BUILD_DIR)/asm/%.o, $(ASM_SOURCES))
 
+
+
 # Include the objcopy-generated logo object in the link list
 LOGO_OBJ = $(BUILD_DIR)/logo_bmp.o
 OBJECTS = $(ASM_OBJECTS) $(C_OBJECTS) $(LOGO_OBJ)
@@ -22,7 +24,7 @@ OBJECTS = $(ASM_OBJECTS) $(C_OBJECTS) $(LOGO_OBJ)
 # Automatic dependency files for header tracking
 DEPS = $(C_OBJECTS:.o=.d) $(MOD_OBJS:.mo=.d)
 
-CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie -Iinclude -MMD -MP 
+CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie -Iinclude -Ilib/lwext4/include -MMD -MP 
 LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 -nostdlib -fno-pie -no-pie
 ASFLAGS = -f elf32
 
