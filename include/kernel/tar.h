@@ -20,6 +20,7 @@ struct tar_header {
     char devmajor[8];
     char devminor[8];
     char prefix[155];
+    char padding[12];
 };
 
 void tar_parse(uint32_t address);

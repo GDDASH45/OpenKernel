@@ -7,6 +7,7 @@
 #include <kernel/time.h>
 #include <driver/sound.h>
 #include <assert.h>
+#include <init/path.h>
 
 // Fix Undefined errors
 #ifndef NULL
@@ -56,7 +57,11 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
 
     info_module_init();
 
+    k_clear_screen();
+
     k_print("Here we go!\n");
+
+    init_path();
 
     for (;;)
     {
