@@ -3,9 +3,13 @@
 **/*.a
 **/*.bin
 **/*.elf
+*.img
 build/*
 *.iso
 iso/**
 initfs/**
 apps/**
 Kernel.syms
+vpc.sh
+mnt/
+copytodisk.sh
