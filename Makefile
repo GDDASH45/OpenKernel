@@ -6,7 +6,7 @@ KERNEL ?= $(BUILD_DIR)/kernel.bin
 
 MOD_DIR = $(BUILD_DIR)/mod
 MOD_SOURCES = $(wildcard modules/*.c)
-MOD_OBJS = $(patsubst modules/%.c, $(MOD_DIR)/%.o, $(MOD_SOURCES))
+MOD_OBJS = $(patsubst modules/%.c, $(MOD_DIR)/%.mo, $(MOD_SOURCES))
 
 # Find all .c and .asm files, excluding build and modules directories
 C_SOURCES = $(shell find . -name "*.c" -not -path "./$(BUILD_DIR)/*" -not -path "./modules/*")
@@ -17,7 +17,7 @@ ASM_OBJECTS = $(patsubst ./%.asm, $(BUILD_DIR)/asm/%.o, $(ASM_SOURCES))
 OBJECTS = $(ASM_OBJECTS) $(C_OBJECTS)
 
 # Automatic dependency files for header tracking
-DEPS = $(C_OBJECTS:.o=.d) $(MOD_OBJS:.o=.d)
+DEPS = $(C_OBJECTS:.o=.d) $(MOD_OBJS:.mo=.d)
 
 CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie -Iinclude -MMD -MP 
 LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 -nostdlib -fno-pie -no-pie
@@ -41,7 +41,7 @@ $(BUILD_DIR)/asm/%.o: %.asm
 	@echo "AS $<"
 	@$(AS) $(ASFLAGS) $< -o $@
 
-$(MOD_DIR)/%.o: modules/%.c
+$(MOD_DIR)/%.mo: modules/%.c
 	@mkdir -p $(dir $@)
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
