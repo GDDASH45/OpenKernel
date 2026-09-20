@@ -16,6 +16,7 @@
 
 extern void info_module_init(void);
 extern void initrd_set_base(uint32_t addr); // Bridge for execve
+extern void draw_bmp(struct multiboot_info *mbi);
 
 void kernel_main(uint32_t magic, uint32_t multiboot_addr) 
 {
@@ -28,12 +29,15 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
         panic("Keyboard initialization failed!");
     }
 
+    
+
     struct multiboot_info *mbi = (struct multiboot_info *)multiboot_addr;
     assert(mbi != NULL);
 
     if (!(mbi->flags & (1 << 3)) || mbi->mods_count == 0) {
         panic("No initramfs provided by GRUB!");
     }
+    draw_bmp(mbi);
 
     struct multiboot_module *mod = (struct multiboot_module *)mbi->mods_addr;
     assert(mod != NULL);
@@ -62,6 +66,7 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
     k_print("Here we go!\n");
 
     init_path();
+
 
     for (;;)
     {
