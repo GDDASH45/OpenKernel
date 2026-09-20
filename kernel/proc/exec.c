@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <write/write.h>
 #include <kernel/tar.h>
+#include <kernel/elf.h>
+#include "../../fs/binfmt_pmx.h"
 
 typedef void (*entry_point_t)(void);
 
@@ -32,19 +34,33 @@ int execve(const char *filename, char *const argv[], char *const envp[]) {
         return -1;
     }
 
-    k_print("execve: Binary found. Copying to execution target...\n");
+    entry_point_t program = 0;
+    int load_result;
 
-    // Copy flat binary to execution load address (e.g., 0x200000)
-    uint8_t *dest = (uint8_t *)0x200000;
-    const uint8_t *src = (const uint8_t *)file_data;
+    if (file_size >= 4 && *(const uint32_t *)file_data == ELF_MAGIC) {
+        load_result = binfmt_elf_load(file_data, file_size, &program);
+    } else if (file_size >= 4 && *(const uint32_t *)file_data == 0x31584D50) {
+        load_result = binfmt_pmx_load(file_data, file_size, &program);
+    } else {
+        uint8_t *dest = (uint8_t *)0x200000;
+        const uint8_t *src = (const uint8_t *)file_data;
 
-    for (uint32_t i = 0; i < file_size; i++) {
-        dest[i] = src[i];
+        if (file_size > 0x100000) {
+            return -1;
+        }
+        for (uint32_t i = 0; i < file_size; i++) {
+            dest[i] = src[i];
+        }
+        program = (entry_point_t)dest;
+        load_result = 0;
+    }
+
+    if (load_result != 0 || program == 0) {
+        k_print("execve: Unsupported or invalid executable format.\n");
+        return -1;
     }
 
     k_print("execve: Jumping to program entry point...\n");
-
-    entry_point_t program = (entry_point_t)dest;
     program();
 
     return 0;

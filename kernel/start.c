@@ -4,10 +4,12 @@
 #include <kernel/tar.h>
 #include <kernel.h>
 #include <driver/keyboard.h>
+#include <driver/mouse.h>
 #include <kernel/time.h>
 #include <driver/sound.h>
 #include <assert.h>
 #include <init/path.h>
+#include <kernel/desktop.h>
 
 // Fix Undefined errors
 #ifndef NULL
@@ -17,6 +19,7 @@
 extern void info_module_init(void);
 extern void initrd_set_base(uint32_t addr); // Bridge for execve
 extern void draw_bmp(struct multiboot_info *mbi);
+extern void fade_bmp_to_dust(struct multiboot_info *mbi);
 
 void kernel_main(uint32_t magic, uint32_t multiboot_addr) 
 {
@@ -29,8 +32,6 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
         panic("Keyboard initialization failed!");
     }
 
-    
-
     struct multiboot_info *mbi = (struct multiboot_info *)multiboot_addr;
     assert(mbi != NULL);
 
@@ -38,6 +39,13 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
         panic("No initramfs provided by GRUB!");
     }
     draw_bmp(mbi);
+    fade_bmp_to_dust(mbi);
+
+    if (init_mouse(mbi->framebuffer_width, mbi->framebuffer_height) != 0) {
+        panic("PS/2 mouse initialization failed!");
+    }
+
+    desktop_show(mbi);
 
     struct multiboot_module *mod = (struct multiboot_module *)mbi->mods_addr;
     assert(mod != NULL);
@@ -66,10 +74,5 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
     k_print("Here we go!\n");
 
     init_path();
-
-
-    for (;;)
-    {
-        __asm__ volatile ("nop");
-    }
+    desktop_run(mbi);
 }

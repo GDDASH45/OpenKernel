@@ -38,4 +38,7 @@ typedef struct {
     uint32_t p_align;
 } __attribute__((packed)) Elf32_Phdr;
 
+int binfmt_elf_load(const void *file_data, uint32_t file_size,
+                    void (**entry_out)(void));
+
 #endif
