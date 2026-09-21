@@ -2,6 +2,7 @@
 #include <write/write.h>
 #include <kernel/tar.h>
 #include <kernel/elf.h>
+#include <kernel/binfmt_okx.h>
 #include "../../fs/binfmt_pmx.h"
 
 typedef void (*entry_point_t)(void);
@@ -37,7 +38,9 @@ int execve(const char *filename, char *const argv[], char *const envp[]) {
     entry_point_t program = 0;
     int load_result;
 
-    if (file_size >= 4 && *(const uint32_t *)file_data == ELF_MAGIC) {
+    if (file_size >= 4 && *(const uint32_t *)file_data == 0x31584B4F) {
+        load_result = binfmt_okx_load(file_data, file_size, &program);
+    } else if (file_size >= 4 && *(const uint32_t *)file_data == ELF_MAGIC) {
         load_result = binfmt_elf_load(file_data, file_size, &program);
     } else if (file_size >= 4 && *(const uint32_t *)file_data == 0x31584D50) {
         load_result = binfmt_pmx_load(file_data, file_size, &program);
