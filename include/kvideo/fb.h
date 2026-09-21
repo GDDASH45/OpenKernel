@@ -12,6 +12,7 @@ void fb_clear(uint32_t color);
 void fb_fill_rect(int x, int y, int width, int height, uint32_t color);
 void fb_draw_char(int x, int y, char character, uint32_t color);
 void fb_draw_text(int x, int y, const char *text, uint32_t color);
+void fb_panic_screen(const char *message);
 uint32_t fb_width(void);
 uint32_t fb_height(void);
 void set_mode_13h(void);
