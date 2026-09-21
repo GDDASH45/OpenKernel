@@ -64,18 +64,14 @@ void draw_bmp(struct multiboot_info *mbi) {
 void fade_bmp_to_dust(struct multiboot_info *mbi) {
     volatile uint8_t *fb;
     unsigned char *logo_bmp;
-    unsigned char *pixel_data;
-    unsigned char *palette;
     uint32_t pitch;
     uint32_t screen_width;
     uint32_t screen_height;
     uint32_t bytes_per_pixel;
-    uint32_t data_offset;
     int32_t img_width;
     int32_t img_height;
     uint16_t bpp;
     int absolute_height;
-    int row_stride;
     int start_x;
     int start_y;
 
@@ -91,7 +87,6 @@ void fade_bmp_to_dust(struct multiboot_info *mbi) {
     screen_height = mbi->framebuffer_height;
     bytes_per_pixel = mbi->framebuffer_bpp / 8;
     logo_bmp = (unsigned char *)_binary_kernel_video_logo_bmp_start;
-    data_offset = *(uint32_t *)&logo_bmp[10];
     img_width = *(int32_t *)&logo_bmp[18];
     img_height = *(int32_t *)&logo_bmp[22];
     bpp = *(uint16_t *)&logo_bmp[28];
@@ -101,18 +96,13 @@ void fade_bmp_to_dust(struct multiboot_info *mbi) {
         return;
     }
 
-    pixel_data = logo_bmp + data_offset;
-    palette = logo_bmp + 54;
     absolute_height = (img_height < 0) ? -img_height : img_height;
-    row_stride = ((img_width * (bpp / 8) + 3) & ~3);
     start_x = ((int)screen_width - img_width) / 2;
     start_y = ((int)screen_height - absolute_height) / 2;
 
     for (int step = 0; step <= 32; step++) {
         for (int y = 0; y < absolute_height; y++) {
-            int src_y = (img_height > 0) ? (absolute_height - 1 - y) : y;
             int screen_y = start_y + y;
-            unsigned char *row_ptr = pixel_data + src_y * row_stride;
 
             if (screen_y < 0 || screen_y >= (int)screen_height) continue;
 
