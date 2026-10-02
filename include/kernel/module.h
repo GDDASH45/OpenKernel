@@ -14,6 +14,8 @@ typedef struct kernel_module {
     uint32_t flags;
 } kernel_module_t;
 
+int __internal_insert_mod(kernel_module_t *mod_addr);
+
 #define KERNEL_MODULE(mod_name, init_fn, exit_fn) \
     static kernel_module_t __mod_##mod_name \
         __attribute__((section(".kernel_modules"), used)) = { \
