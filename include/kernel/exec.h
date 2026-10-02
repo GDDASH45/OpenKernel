@@ -3,6 +3,6 @@
 
 #include <stdint.h>
 
-void run_binary(uint32_t initrd_start, const char *filename);
+int run_binary(uint32_t initrd_start, const char *filename);
 
 #endif

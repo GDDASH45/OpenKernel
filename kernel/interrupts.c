@@ -4,6 +4,7 @@
 #include <kernel/ports.h>
 #include <kernel/syscall.h>
 #include <driver/mouse.h>
+#include <driver/keyboard.h>
 
 #define PIC1_COMMAND 0x20
 #define PIC1_DATA    0x21
@@ -156,7 +157,9 @@ void interrupt_handler(void *registers) {
 
     if (vector >= PIC1_OFFSET && vector < PIC1_OFFSET + 16) {
         uint8_t irq = (uint8_t)(vector - PIC1_OFFSET);
-        if (irq == 12) {
+        if (irq == 1) {
+            keyboard_irq_handler();
+        } else if (irq == 12) {
             mouse_irq_handler();
         }
         if (irq >= 8) {

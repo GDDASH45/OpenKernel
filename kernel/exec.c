@@ -3,11 +3,12 @@
 #include <kernel/tar.h>
 #include <kernel/elf.h>
 #include <kernel/binfmt_okx.h>
+#include <kernel/process.h>
 #include "../fs/binfmt_pmx.h"
 
 typedef void (*program_entry_t)(void);
 
-void run_binary(uint32_t initrd_start, const char *filename) {
+int run_binary(uint32_t initrd_start, const char *filename) {
     uint32_t size = 0;
     const char *binary_data = tar_get_file(initrd_start, filename, &size);
 
@@ -15,7 +16,7 @@ void run_binary(uint32_t initrd_start, const char *filename) {
         k_print("Binary not found: ");
         k_print(filename);
         k_print("\n");
-        return;
+        return -1;
     }
 
     k_print("Executing binary: ");
@@ -38,10 +39,13 @@ void run_binary(uint32_t initrd_start, const char *filename) {
 
     if (load_result != 0 || entry == 0) {
         k_print("Unsupported or invalid executable format.\n");
-        return;
+        return -1;
     }
 
+    uint32_t previous_pid = process_enter_program();
     entry();
+    process_leave_program(previous_pid);
 
     k_print("\nBinary finished execution.\n");
+    return 0;
 }

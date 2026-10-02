@@ -38,8 +38,30 @@ static inline int32_t ok_write(int fd, const void *buffer, uint32_t size) {
     return (int32_t)written;
 }
 
+static inline int32_t ok_console_write(const void *buffer, uint32_t size) {
+    const uint8_t *bytes = (const uint8_t *)buffer;
+    uint32_t written = 0;
+
+    if (buffer == 0 && size != 0) {
+        return -14;
+    }
+    while (written < size) {
+        int32_t result = ok_syscall3(
+            OK_SYS_CONSOLE_WRITE,
+            (uint32_t)(uintptr_t)(bytes + written), size - written, 0);
+        if (result < 0) {
+            return written != 0 ? (int32_t)written : result;
+        }
+        if (result == 0) {
+            break;
+        }
+        written += (uint32_t)result;
+    }
+    return (int32_t)written;
+}
+
 static inline int32_t ok_putchar(char character) {
-    return ok_write(OK_STDOUT_FILENO, &character, 1);
+    return ok_console_write(&character, 1);
 }
 
 static inline int32_t ok_puts(const char *text) {
@@ -52,7 +74,7 @@ static inline int32_t ok_puts(const char *text) {
     while (text[length] != '\0') {
         length++;
     }
-    result = ok_write(OK_STDOUT_FILENO, text, length);
+    result = ok_console_write(text, length);
     if (result < 0) {
         return result;
     }

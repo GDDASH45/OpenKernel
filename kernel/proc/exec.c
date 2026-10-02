@@ -3,6 +3,7 @@
 #include <kernel/tar.h>
 #include <kernel/elf.h>
 #include <kernel/binfmt_okx.h>
+#include <kernel/process.h>
 #include "../../fs/binfmt_pmx.h"
 
 typedef void (*entry_point_t)(void);
@@ -12,14 +13,27 @@ static uint32_t g_initrd_start = 0;
 
 void initrd_set_base(uint32_t addr) {
     g_initrd_start = addr;
+    process_system_init();
 }
 
 int execve(const char *filename, char *const argv[], char *const envp[]) {
+    const char *archive_name = filename;
+
     (void)argv;
     (void)envp;
 
+    if (filename == 0 || filename[0] == '\0') {
+        return -1;
+    }
+    while (*archive_name == '/') {
+        archive_name++;
+    }
+    if (*archive_name == '\0') {
+        return -1;
+    }
+
     k_print("execve: Locating binary '");
-    k_print(filename);
+    k_print(archive_name);
     k_print("' in initramfs...\n");
 
     if (g_initrd_start == 0) {
@@ -28,7 +42,7 @@ int execve(const char *filename, char *const argv[], char *const envp[]) {
     }
 
     uint32_t file_size = 0;
-    const char *file_data = tar_get_file(g_initrd_start, filename, &file_size);
+    const char *file_data = tar_get_file(g_initrd_start, archive_name, &file_size);
 
     if (!file_data) {
         k_print("execve: Binary not found in archive.\n");

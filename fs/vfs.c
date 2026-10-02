@@ -6,6 +6,18 @@ static struct vfs_node node_pool[MAX_VFS_NODES];
 static uint32_t node_count = 0;
 static struct vfs_node root_node = { "/", VFS_DIRECTORY, 0, 0, 0, 0, 0, 0, 0 };
 
+static int console_device_write(struct vfs_node *node, const char *buffer,
+                                uint32_t size) {
+    (void)node;
+    if (buffer == 0 && size != 0) {
+        return -1;
+    }
+    for (uint32_t index = 0; index < size; index++) {
+        k_print_char(buffer[index]);
+    }
+    return (int)size;
+}
+
 static void vfs_reset_node(struct vfs_node *node) {
     if (node == 0) {
         return;
@@ -301,8 +313,15 @@ void mount_essential_folders(void) {
     vfs_mkdir(vfs_get_root(), "/var");
     vfs_mkdir(vfs_get_root(), "/usr");
     vfs_mkdir(vfs_get_root(), "/dev");
+    vfs_mkdir(vfs_get_root(), "/device");
     vfs_mkdir(vfs_get_root(), "/sys");
     vfs_mkdir(vfs_get_root(), "/proc");
+    struct vfs_node *console = vfs_create_file(vfs_get_root(),
+                                               "/device/console", 0,
+                                               console_device_write);
+    if (console != 0) {
+        console->flags |= VFS_DEVICE;
+    }
     k_print("[VFS] Essential directories initialized.\n");
 }
 

@@ -117,9 +117,6 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
 
     k_print("Initramfs loaded successfully!\n");
     
-    // Parse the TAR archive in memory
-    tar_parse(initrd_start);
-
     sound_init();
     beep(440, 150);
     sleep_ms(1000);
@@ -134,4 +131,7 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
     k_print("Here we go!\n");
 
     init_path();
+
+    /* Validate the archive and execute its /init only after kernel setup. */
+    tar_parse(initrd_start);
 }

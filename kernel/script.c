@@ -18,7 +18,12 @@ static int str_equals(const char *s1, const char *s2) {
     return *(const unsigned char*)s1 == *(const unsigned char*)s2;
 }
 
-void script_run(const char *script_data, uint32_t size, uint32_t initrd_start) {
+int script_run(const char *script_data, uint32_t size, uint32_t initrd_start) {
+    int command_found = 0;
+
+    if (script_data == 0 || size == 0) {
+        return -1;
+    }
     k_print("Running startup script...\n");
 
     const char *ptr = script_data;
@@ -30,6 +35,12 @@ void script_run(const char *script_data, uint32_t size, uint32_t initrd_start) {
     while (ptr < end) {
         char c = *ptr++;
 
+        if (c == '\r') {
+            if (ptr < end) {
+                continue;
+            }
+            c = '\n';
+        }
         if (c == '\n' || ptr == end) {
             line_buf[line_idx] = '\0';
 
@@ -37,19 +48,34 @@ void script_run(const char *script_data, uint32_t size, uint32_t initrd_start) {
             if (line_idx > 0 && line_buf[0] != '#') {
                 if (str_equals(line_buf, "clear")) {
                     k_clear_screen();
+                    command_found = 1;
                 } else if (str_starts_with(line_buf, "print ")) {
                     // Print text after "print "
                     k_print(line_buf + 6);
                     k_print("\n");
-                } else if (str_starts_with(line_buf, "exec "))
-                {
-                    run_binary(initrd_start, line_buf + 5);
+                    command_found = 1;
+                } else if (str_starts_with(line_buf, "exec ")) {
+                    if (line_buf[5] == '\0' ||
+                        run_binary(initrd_start, line_buf + 5) != 0) {
+                        return -1;
+                    }
+                    command_found = 1;
+                } else {
+                    k_print("Unknown init command: ");
+                    k_print(line_buf);
+                    k_print("\n");
+                    return -1;
                 }
             }
 
             line_idx = 0;
         } else if (line_idx < sizeof(line_buf) - 1) {
             line_buf[line_idx++] = c;
+        } else {
+            k_print("Init script line is too long.\n");
+            return -1;
         }
     }
+
+    return command_found ? 0 : -1;
 }
