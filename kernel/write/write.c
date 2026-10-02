@@ -1,4 +1,5 @@
 #include <write/write.h>
+#include <kvideo/fbcon.h>
 
 static int cursor_row = 0;
 static int cursor_col = 0;
@@ -39,9 +40,15 @@ void k_clear_screen(void) {
     }
     cursor_row = 0;
     cursor_col = 0;
+    fbcon_clear();
 }
 
 void k_print_char(char c) {
+    if (fbcon_is_active()) {
+        fbcon_put_char(c);
+        return;
+    }
+
     volatile unsigned char *vga = (volatile unsigned char *)VGA_ADDRESS;
 
     // Check scroll condition before writing to prevent out-of-bounds memory corruption

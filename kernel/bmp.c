@@ -1,10 +1,15 @@
 #include <kernel/multiboot.h>
 #include <kernel/time.h>
+#include <kvideo/fb.h>
 
 // Symbols generated automatically by objcopy
 extern char _binary_kernel_video_logo_bmp_start[];
 
 void draw_bmp(struct multiboot_info *mbi) {
+    if (fb_init(mbi) != 0) {
+        return;
+    }
+
     if (!(mbi->flags & (1 << 12)) || mbi->framebuffer_type != 1) {
         return;
     }

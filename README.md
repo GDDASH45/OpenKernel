@@ -56,19 +56,19 @@ Ensure you have a cross-compiler toolchain and QEMU installed, then run the buil
 ./run.sh
 ```
 
-## Linux user-mode wrapper
+## Linux-hosted console
 
-The Linux executable is a thin launcher for the actual freestanding kernel. It
-does not substitute a hosted shell or reimplement kernel services. Build the
-kernel and launcher with `make linux`; build the boot ISO and start the kernel
-under QEMU with:
+To build a native Linux executable that runs the hosted console and its in-memory
+VFS (without booting the kernel or accessing hardware), run:
 
 ```sh
-make run-linux
+make linux
+./build/openkernel
 ```
 
-`run-linux` copies `build/kernel.bin` into the GRUB image, packages `initfs/` as
-the initramfs, creates `os.iso`, then launches QEMU through `build/openkernel`.
-QEMU options can be passed with `QEMU_ARGS`, for example `make run-linux
-QEMU_ARGS="-m 256"`. The wrapper also accepts `OPENKERNEL_QEMU` and
-`OPENKERNEL_ISO` environment variables to select a QEMU executable or ISO path.
+Alternatively, `make run-linux` builds and launches it. This host mode is a
+development console, not a full hardware or kernel emulator; the normal
+freestanding kernel build remains `make`. At the `ok>` prompt, use `run
+/path/to/program [arguments...]` to start a Linux executable (typically an ELF)
+as a child process; for example, `run /bin/echo hello`. Such programs run with
+the current user's Linux permissions and are not sandboxed by OpenKernel.

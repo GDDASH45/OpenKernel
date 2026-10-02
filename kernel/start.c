@@ -11,6 +11,8 @@
 #include <init/path.h>
 #include <kernel/desktop.h>
 #include <kernel/okfs.h>
+#include <kvideo/fbcon.h>
+#include "../fs/vfs.h"
 
 // Fix Undefined errors
 #ifndef NULL
@@ -68,8 +70,16 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
         panic("Keyboard initialization failed!");
     }
 
+    vfs_init();
+
     struct multiboot_info *mbi = (struct multiboot_info *)multiboot_addr;
     assert(mbi != NULL);
+
+    if (fb_init(mbi) != 0) {
+        k_print("[GFX] Linear framebuffer unavailable. Continuing without it.\n");
+    } else {
+        fbcon_init();
+    }
 
     if (!(mbi->flags & (1 << 3)) || mbi->mods_count == 0) {
         panic("No initramfs provided by GRUB!");
@@ -78,10 +88,9 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
     fade_bmp_to_dust(mbi);
 
     if (init_mouse(mbi->framebuffer_width, mbi->framebuffer_height) != 0) {
-        panic("PS/2 mouse initialization failed!");
+        k_print("[MOUSE] PS/2 mouse unavailable; continuing without mouse input.\n");
     }
 
-    desktop_show(mbi);
 
     struct multiboot_module *mod = (struct multiboot_module *)mbi->mods_addr;
     assert(mod != NULL);
@@ -121,5 +130,4 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
     k_print("Here we go!\n");
 
     init_path();
-    desktop_run(mbi);
 }

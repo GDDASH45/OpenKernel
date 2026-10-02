@@ -14,17 +14,26 @@ static int mouse_max_x;
 static int mouse_max_y;
 static uint8_t packet[3];
 static uint8_t packet_index;
+static int mouse_ready;
 
 static int wait_for_write(void) {
-    uint32_t timeout = 100000;
+    uint32_t timeout = 10000;
     while ((port_byte_in(PS2_STATUS) & PS2_INPUT_FULL) && timeout != 0) {
         timeout--;
     }
     return timeout != 0;
 }
 
+static int wait_for_read(void) {
+    uint32_t timeout = 10000;
+    while (!(port_byte_in(PS2_STATUS) & PS2_OUTPUT_FULL) && timeout != 0) {
+        timeout--;
+    }
+    return timeout != 0;
+}
+
 static int wait_for_mouse_data(void) {
-    uint32_t timeout = 100000;
+    uint32_t timeout = 10000;
     while (timeout != 0) {
         uint8_t status = port_byte_in(PS2_STATUS);
         if ((status & (PS2_OUTPUT_FULL | PS2_AUX_DATA)) ==
@@ -34,6 +43,11 @@ static int wait_for_mouse_data(void) {
         timeout--;
     }
     return 0;
+}
+
+static int mouse_present(void) {
+    uint8_t status = port_byte_in(PS2_STATUS);
+    return (status & PS2_AUX_DATA) != 0;
 }
 
 static int send_mouse_command(uint8_t command) {
@@ -54,7 +68,11 @@ static int send_mouse_command(uint8_t command) {
 int init_mouse(uint32_t screen_width, uint32_t screen_height) {
     uint8_t config;
 
-    if (screen_width == 0 || screen_height == 0 || !wait_for_write()) {
+    mouse_ready = 0;
+    if (screen_width == 0 || screen_height == 0 || !mouse_present()) {
+        return -1;
+    }
+    if (!wait_for_write()) {
         return -1;
     }
 
@@ -63,7 +81,7 @@ int init_mouse(uint32_t screen_width, uint32_t screen_height) {
         return -1;
     }
     port_byte_out(PS2_COMMAND, 0x20);
-    if (!wait_for_mouse_data()) {
+    if (!wait_for_read()) {
         return -1;
     }
     config = port_byte_in(PS2_DATA);
@@ -88,16 +106,22 @@ int init_mouse(uint32_t screen_width, uint32_t screen_height) {
     mouse_x = mouse_max_x / 2;
     mouse_y = mouse_max_y / 2;
     packet_index = 0;
+    mouse_ready = 1;
     return 0;
+}
+
+int mouse_is_ready(void) {
+    return mouse_ready;
 }
 
 int mouse_poll(struct mouse_state *state) {
     uint8_t status;
+    uint8_t data;
     int delta_x;
     int delta_y;
 
-    if (state == 0) {
-        return -1;
+    if (!mouse_ready || state == 0) {
+        return 0;
     }
 
     status = port_byte_in(PS2_STATUS);
@@ -106,11 +130,17 @@ int mouse_poll(struct mouse_state *state) {
         return 0;
     }
 
-    packet[packet_index++] = port_byte_in(PS2_DATA);
-    if (packet_index == 1 && !(packet[0] & 0x08)) {
-        packet_index = 0;
+    data = port_byte_in(PS2_DATA);
+    if (packet_index == 0) {
+        if ((data & 0x08) == 0) {
+            return 0;
+        }
+        packet[0] = data;
+        packet_index = 1;
         return 0;
     }
+
+    packet[packet_index++] = data;
     if (packet_index < 3) {
         return 0;
     }

@@ -190,13 +190,20 @@ void fb_panic_screen(const char *message) {
         return;
     }
 
-    fb_clear(0x120E18);
-    fb_fill_rect(0, 0, (int)framebuffer_width, 72, 0x7A1020);
-    fb_fill_rect(36, 104, (int)framebuffer_width - 72, 2, 0xD94A5B);
-    fb_draw_text(36, 28, "OPENKERNEL PANIC", 0xFFFFFF);
-    fb_draw_text(36, 128, "The kernel stopped because of a fatal error:", 0xFFD9DE);
-    fb_draw_text(36, 154, message != 0 ? message : "Unknown kernel panic", 0xFFFFFF);
-    fb_draw_text(36, 198, "System halted.", 0xB9A0A8);
+    const uint32_t background = 0xFF7FB5;
+    const uint32_t panel = 0xF4A9C9;
+    const uint32_t title = 0xFFFFFF;
+    const uint32_t text = 0xFFF3F8;
+    const uint32_t accent = 0xD12D6D;
+    const char *panic_message = message != 0 ? message : "Unknown kernel panic";
+
+    fb_clear(background);
+    fb_fill_rect(24, 20, (int)framebuffer_width - 48, (int)framebuffer_height - 40, panel);
+    fb_fill_rect(32, 28, (int)framebuffer_width - 64, 4, accent);
+    fb_draw_text(48, 48, "KERNEL PANIC", title);
+    fb_draw_text(48, 80, "The kernel halted unexpectedly.", text);
+    fb_draw_text(48, 116, panic_message, title);
+    fb_draw_text(48, (int)framebuffer_height - 52, "System halted.", 0xFFE7F0);
 }
 
 uint32_t fb_width(void) {

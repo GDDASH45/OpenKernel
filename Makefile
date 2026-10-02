@@ -1,15 +1,18 @@
 CC = gcc
 AS = nasm
+HOST_CC ?= cc
 
 BUILD_DIR = build
 KERNEL ?= $(BUILD_DIR)/kernel.bin
+LINUX_PROGRAM ?= $(BUILD_DIR)/openkernel
+HOST_SOURCES = host/main.c
 
 MOD_DIR = $(BUILD_DIR)/mod
 MOD_SOURCES = $(wildcard modules/*.c)
 MOD_OBJS = $(patsubst modules/%.c, $(MOD_DIR)/%.mo, $(MOD_SOURCES))
 
 # Find all .c and .asm files, excluding build and modules directories
-C_SOURCES = $(shell find . -name "*.c" -not -path "./$(BUILD_DIR)/*" -not -path "./modules/*")
+C_SOURCES = $(shell find . -name "*.c" -not -path "./$(BUILD_DIR)/*" -not -path "./modules/*" -not -path "./host/*")
 ASM_SOURCES = $(shell find . -name "*.asm" -not -path "./$(BUILD_DIR)/*")
 
 C_OBJECTS = $(patsubst ./%.c, $(BUILD_DIR)/c/%.o, $(C_SOURCES))
@@ -27,8 +30,24 @@ DEPS = $(C_OBJECTS:.o=.d) $(MOD_OBJS:.mo=.d)
 CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie -Iinclude -Ilib/lwext4/include -MMD -MP 
 LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 -nostdlib -fno-pie -no-pie
 ASFLAGS = -f elf32
+HOST_CFLAGS = -std=gnu99 -O2 -Wall -Wextra -Iinclude
 
 all: $(KERNEL)
+
+linux: $(KERNEL) $(LINUX_PROGRAM)
+
+$(LINUX_PROGRAM): $(HOST_SOURCES)
+	@mkdir -p $(dir $@)
+	@echo "HOST CC $@"
+	@$(HOST_CC) $(HOST_CFLAGS) -o $@ $(HOST_SOURCES)
+
+os.iso: $(KERNEL) $(shell find initfs -type f) iso/boot/grub/grub.cfg build_fs.sh copy_kernel.sh make_iso.sh
+	@./copy_kernel.sh
+	@./build_fs.sh
+	@./make_iso.sh
+
+run-linux: linux os.iso
+	@./$(LINUX_PROGRAM) $(QEMU_ARGS)
 
 $(KERNEL): $(OBJECTS) $(MOD_OBJS)
 	@echo "LD $(KERNEL)"
@@ -72,4 +91,4 @@ patch_modules:
 clean:
 	rm -rf $(BUILD_DIR) Kernel.syms
 
-.PHONY: all clean patch_modules
+.PHONY: all clean linux run-linux patch_modules

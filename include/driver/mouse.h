@@ -11,5 +11,6 @@ struct mouse_state {
 
 int init_mouse(uint32_t screen_width, uint32_t screen_height);
 int mouse_poll(struct mouse_state *state);
+int mouse_is_ready(void);
 
 #endif
