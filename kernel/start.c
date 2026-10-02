@@ -6,6 +6,7 @@
 #include <driver/keyboard.h>
 #include <driver/mouse.h>
 #include <kernel/time.h>
+#include <kernel/interrupts.h>
 #include <driver/sound.h>
 #include <assert.h>
 #include <init/path.h>
@@ -66,6 +67,8 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
         panic("Invalid multiboot magic number!");
     }
 
+    interrupts_init();
+
     if (init_keyboard() != 0) {
         panic("Keyboard initialization failed!");
     }
@@ -90,6 +93,7 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
     if (init_mouse(mbi->framebuffer_width, mbi->framebuffer_height) != 0) {
         k_print("[MOUSE] PS/2 mouse unavailable; continuing without mouse input.\n");
     }
+    interrupts_enable();
 
 
     struct multiboot_module *mod = (struct multiboot_module *)mbi->mods_addr;

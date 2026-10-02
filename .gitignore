@@ -13,3 +13,4 @@ Kernel.syms
 vpc.sh
 mnt/
 copytodisk.sh
+.build_number

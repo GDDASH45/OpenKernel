@@ -7,6 +7,8 @@ KERNEL ?= $(BUILD_DIR)/kernel.bin
 LINUX_PROGRAM ?= $(BUILD_DIR)/openkernel
 HOST_SOURCES = host/main.c
 
+BUILD_NUMBER_FILE = .build_number
+
 MOD_DIR = $(BUILD_DIR)/mod
 MOD_SOURCES = $(wildcard modules/*.c)
 MOD_OBJS = $(patsubst modules/%.c, $(MOD_DIR)/%.mo, $(MOD_SOURCES))
@@ -27,7 +29,7 @@ OBJECTS = $(ASM_OBJECTS) $(C_OBJECTS) $(LOGO_OBJ)
 # Automatic dependency files for header tracking
 DEPS = $(C_OBJECTS:.o=.d) $(MOD_OBJS:.mo=.d)
 
-CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie -Iinclude -Ilib/lwext4/include -MMD -MP 
+CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie -Iinclude -MMD -MP 
 LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 -nostdlib -fno-pie -no-pie
 ASFLAGS = -f elf32
 HOST_CFLAGS = -std=gnu99 -O2 -Wall -Wextra -Iinclude
@@ -52,8 +54,12 @@ run-linux: linux os.iso
 $(KERNEL): $(OBJECTS) $(MOD_OBJS)
 	@echo "LD $(KERNEL)"
 	@$(CC) $(LDFLAGS) -o $@ $(OBJECTS) $(MOD_OBJS)
-	nm -n $(KERNEL) > Kernel.syms
-	@echo "kernel Image is ready!"
+	@nm -n $(KERNEL) > Kernel.syms
+	@if [ ! -f "$(BUILD_NUMBER_FILE)" ]; then echo 0 > "$(BUILD_NUMBER_FILE)"; fi
+	@build=$$(cat "$(BUILD_NUMBER_FILE)"); \
+	build=$$((build + 1)); \
+	echo $$build > "$(BUILD_NUMBER_FILE)"; \
+	echo "Kernel Image is ready! (build #$$build)"
 
 $(BUILD_DIR)/c/%.o: %.c
 	@mkdir -p $(dir $@)
