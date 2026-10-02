@@ -14,7 +14,7 @@ MOD_SOURCES = $(wildcard modules/*.c)
 MOD_OBJS = $(patsubst modules/%.c, $(MOD_DIR)/%.mo, $(MOD_SOURCES))
 
 # Find all .c and .asm files, excluding build and modules directories
-C_SOURCES = $(shell find . -name "*.c" -not -path "./$(BUILD_DIR)/*" -not -path "./modules/*" -not -path "./host/*")
+C_SOURCES = $(shell find . -name "*.c" -not -path "./$(BUILD_DIR)/*" -not -path "./modules/*" -not -path "./host/*" -not -path "./bionicbox/*")
 ASM_SOURCES = $(shell find . -name "*.asm" -not -path "./$(BUILD_DIR)/*")
 
 C_OBJECTS = $(patsubst ./%.c, $(BUILD_DIR)/c/%.o, $(C_SOURCES))

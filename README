@@ -8,6 +8,7 @@ OpenKernel is a custom, minimalist microkernel designed and implemented in **C**
 * **Userspace Separation**: Core services and utilities execute entirely in userspace, keeping the kernel decoupled from application logic.
 * **PMX Binary Loader**: Custom binary format loader responsible for mapping and executing programs.
 * **Initramfs VFS**: Parses standard `tar` archives to mount an initial ramdisk filesystem during boot.
+* **System call ABI**: Freestanding programs can request console output, a process ID, and yield through `int 0x80` using the wrappers in `include/user/syscall.h`.
 
 ## Contribution Policy
 
@@ -55,6 +56,12 @@ Ensure you have a cross-compiler toolchain and QEMU installed, then run the buil
 ```bash
 ./run.sh
 ```
+
+`bionicbox/init.c` demonstrates the user syscall wrappers and can be packaged
+with `./okcc.sh bionicbox/init.c build/bionicbox.okx`. The initial syscall ABI
+provides `ok_write`, `ok_putchar`, `ok_puts`, `ok_getpid`, and `ok_yield`.
+At present, the OKX loader invokes programs in kernel privilege level; the
+syscall interface is an ABI boundary, not yet memory-protected ring-3 execution.
 
 ## Linux user-mode wrapper
 

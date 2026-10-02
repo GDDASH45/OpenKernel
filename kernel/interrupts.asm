@@ -6,6 +6,7 @@ extern interrupt_handler
 
 global isr_stub_table
 global irq_stub_table
+global syscall_stub
 
 isr_common_stub:
     pusha
@@ -56,6 +57,11 @@ irq_common_stub:
     popa
     add esp, 8
     iretd
+
+syscall_stub:
+    push dword 0
+    push dword 0x80
+    jmp isr_common_stub
 
 %macro ISR_NO_ERROR 1
     global isr%1

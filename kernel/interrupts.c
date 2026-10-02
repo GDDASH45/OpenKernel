@@ -2,6 +2,7 @@
 #include <kernel.h>
 #include <kernel/interrupts.h>
 #include <kernel/ports.h>
+#include <kernel/syscall.h>
 #include <driver/mouse.h>
 
 #define PIC1_COMMAND 0x20
@@ -11,7 +12,8 @@
 #define PIC_EOI      0x20
 #define PIC1_OFFSET  0x20
 #define PIC2_OFFSET  0x28
-#define IDT_ENTRIES  48
+#define IDT_ENTRIES  129
+#define SYSCALL_VECTOR 0x80
 
 struct idt_entry {
     uint16_t offset_low;
@@ -46,8 +48,9 @@ struct interrupt_registers {
     uint32_t eflags;
 };
 
-extern void *isr_stub_table[32];
-extern void *irq_stub_table[16];
+extern uintptr_t isr_stub_table[32];
+extern uintptr_t irq_stub_table[16];
+extern void syscall_stub(void);
 
 static struct idt_entry idt[IDT_ENTRIES];
 static struct idt_pointer idtr;
@@ -56,14 +59,14 @@ static void io_wait(void) {
     port_byte_out(0x80, 0);
 }
 
-static void idt_set_gate(uint8_t vector, void *handler) {
-    uint32_t address = (uint32_t)(uintptr_t)handler;
+static void idt_set_gate(uint8_t vector, uintptr_t handler) {
+    uint32_t address = (uint32_t)handler;
 
     idt[vector].offset_low = (uint16_t)(address & 0xFFFF);
     /* GRUB's Multiboot GDT uses 0x10 for 32-bit code and 0x18 for data. */
     idt[vector].selector = 0x10;
     idt[vector].zero = 0;
-    idt[vector].attributes = 0x8E;
+    idt[vector].attributes = vector == SYSCALL_VECTOR ? 0xEE : 0x8E;
     idt[vector].offset_high = (uint16_t)(address >> 16);
 }
 
@@ -99,6 +102,7 @@ void interrupts_init(void) {
     for (uint8_t irq = 0; irq < 16; irq++) {
         idt_set_gate((uint8_t)(PIC1_OFFSET + irq), irq_stub_table[irq]);
     }
+    idt_set_gate(SYSCALL_VECTOR, (uintptr_t)syscall_stub);
 
     idtr.limit = (uint16_t)(sizeof(idt) - 1);
     idtr.base = (uint32_t)(uintptr_t)&idt[0];
@@ -133,8 +137,8 @@ void interrupts_enable(void) {
 }
 
 void interrupt_handler(void *registers) {
-    const struct interrupt_registers *frame =
-        (const struct interrupt_registers *)registers;
+    struct interrupt_registers *frame =
+        (struct interrupt_registers *)registers;
     uint32_t vector = frame->vector;
 
     if (vector < 32) {
@@ -142,6 +146,12 @@ void interrupt_handler(void *registers) {
         message[14] = (char)('0' + (vector / 10));
         message[15] = (char)('0' + (vector % 10));
         panic(message);
+    }
+
+    if (vector == SYSCALL_VECTOR) {
+        frame->eax = (uint32_t)syscall_dispatch(frame->eax, frame->ebx,
+                                                frame->ecx, frame->edx);
+        return;
     }
 
     if (vector >= PIC1_OFFSET && vector < PIC1_OFFSET + 16) {
