@@ -1,6 +1,7 @@
 #include <kernel/tar.h>
 #include <kernel/script.h>
 #include <kernel/exec.h>
+#include <kernel/bootopts.h>
 #include <write/write.h>
 #include <kernel.h>
 
@@ -17,22 +18,30 @@ static uint32_t tar_to_int(const char *in) {
 }
 
 static int str_match(const char *s1, const char *s2) {
-    if (s1[0] == '.' && s1[1] == '/') s1 += 2;
-    if (s2[0] == '.' && s2[1] == '/') s2 += 2;
+    for (;;) {
+        if (s1[0] == '/') {
+            s1++;
+        } else if (s1[0] == '.' && s1[1] == '/') {
+            s1 += 2;
+        } else {
+            break;
+        }
+    }
+    for (;;) {
+        if (s2[0] == '/') {
+            s2++;
+        } else if (s2[0] == '.' && s2[1] == '/') {
+            s2 += 2;
+        } else {
+            break;
+        }
+    }
 
     while (*s1 && (*s1 == *s2)) { 
         s1++; 
         s2++; 
     }
     return *s1 == *s2;
-}
-
-static int is_root_init(const char *name) {
-    if (name[0] == '.' && name[1] == '/') {
-        name += 2;
-    }
-    return name[0] == 'i' && name[1] == 'n' && name[2] == 'i' &&
-           name[3] == 't' && name[4] == '\0';
 }
 
 static int is_text_script(const char *data, uint32_t size) {
@@ -85,16 +94,12 @@ void tar_parse(uint32_t address) {
         panic("Invalid or unrecognized TAR archive format!");
     }
 
-    const char *init_data = 0;
-    uint32_t init_size = 0;
+    const char *init_path = bootopts_init_path();
     int found_boot = 0;
     int found_root = 0;
     int found_device = 0;
 
     while (header->name[0] != '\0') {
-        uint32_t size = tar_to_int(header->size);
-        uint32_t file_data_address = address + 512;
-
         const char *name = header->name;
         if (name[0] == '.' && name[1] == '/') name += 2;
 
@@ -111,11 +116,7 @@ void tar_parse(uint32_t address) {
             found_device = 1;
         }
 
-        if (is_root_init(header->name)) {
-            init_data = (const char *)file_data_address;
-            init_size = size;
-        }
-
+        uint32_t size = tar_to_int(header->size);
         uint32_t blocks = (size + 512 - 1) / 512;
         address += (blocks + 1) * 512;
         header = (struct tar_header *)address;
@@ -129,18 +130,25 @@ void tar_parse(uint32_t address) {
     if (!found_root) panic("/root/ not found!");
     if (!found_device) panic("/device/ not found!");
 
+    uint32_t init_size = 0;
+    const char *init_data = tar_get_file(initrd_base, init_path, &init_size);
     if (init_data == 0) {
-        panic("/init not found in initramfs!\n");
+        k_print("Configured init not found: ");
+        k_print(init_path);
+        k_print("\n");
+        panic("Configured init executable is missing!");
     }
 
-    k_print("[INIT] Attempting to execute /init\n");
+    k_print("[INIT] Attempting to execute ");
+    k_print(init_path);
+    k_print("\n");
     if (is_text_script(init_data, init_size)) {
         if (script_run(init_data, init_size, initrd_base) != 0) {
             panic("Failed to run /init script!");
         }
     } else {
-        if (run_binary(initrd_base, "init") != 0) {
-            panic("Failed to execute /init binary!");
+        if (run_binary(initrd_base, init_path) < 0) {
+            panic("Failed to execute configured init!");
         }
     }
 }

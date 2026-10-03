@@ -56,7 +56,7 @@ int script_run(const char *script_data, uint32_t size, uint32_t initrd_start) {
                     command_found = 1;
                 } else if (str_starts_with(line_buf, "exec ")) {
                     if (line_buf[5] == '\0' ||
-                        run_binary(initrd_start, line_buf + 5) != 0) {
+                        run_binary(initrd_start, line_buf + 5) < 0) {
                         return -1;
                     }
                     command_found = 1;

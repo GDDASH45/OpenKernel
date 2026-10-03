@@ -86,8 +86,37 @@ static inline int32_t ok_getpid(void) {
     return ok_syscall3(OK_SYS_GETPID, 0, 0, 0);
 }
 
+static inline int32_t ok_clear(void) {
+    return ok_syscall3(OK_SYS_CLEAR, 0, 0, 0);
+}
+
+static inline int32_t ok_mkdev(const char *path, uint32_t type) {
+    return ok_syscall3(OK_SYS_MKDEV, (uint32_t)(uintptr_t)path, type, 0);
+}
+
+static inline int32_t ok_listdir(const char *path, char *buffer,
+                                 uint32_t capacity) {
+    if (path == 0 || buffer == 0 || capacity == 0) {
+        return -14;
+    }
+    return ok_syscall3(OK_SYS_READDIR, (uint32_t)(uintptr_t)path,
+                       (uint32_t)(uintptr_t)buffer, capacity);
+}
+
 static inline int32_t ok_yield(void) {
     return ok_syscall3(OK_SYS_YIELD, 0, 0, 0);
+}
+
+static inline int32_t ok_getchar(void) {
+    int32_t result;
+
+    do {
+        result = ok_syscall3(OK_SYS_GETCHAR, 0, 0, 0);
+        if (result == -11) {
+            ok_yield();
+        }
+    } while (result == -11);
+    return result;
 }
 
 #endif

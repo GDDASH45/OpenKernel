@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <kernel/syscall.h>
 #include <kernel/process.h>
+#include <driver/keyboard.h>
 #include "../fs/vfs.h"
 #include <write/write.h>
 
@@ -8,7 +9,9 @@
 #define OK_EFAULT 14
 #define OK_EIO 5
 #define OK_ENOSYS 38
+#define OK_EAGAIN 11
 #define OK_SYSCALL_WRITE_MAX 4096u
+#define OK_SYSCALL_READDIR_MAX 1024u
 
 extern int execve(const char *filename, char *const argv[],
                   char *const envp[]);
@@ -26,7 +29,7 @@ static int32_t console_write(const char *buffer, uint32_t size) {
         return 0;
     }
 
-    result = vfs_write_file(vfs_get_root(), "/device/console", buffer, size);
+    result = vfs_console_write(buffer, size);
     return result < 0 ? -OK_EIO : result;
 }
 
@@ -54,6 +57,29 @@ int32_t syscall_dispatch(uint32_t number, uint32_t arg1, uint32_t arg2,
         return execve((const char *)(uintptr_t)arg1,
                       (char *const *)(uintptr_t)arg2,
                       (char *const *)(uintptr_t)arg3);
+    case OK_SYS_GETCHAR: {
+        char character;
+        return keyboard_try_get_char(&character) ? (uint8_t)character
+                                                  : -OK_EAGAIN;
+    }
+    case OK_SYS_CLEAR:
+        k_clear_screen();
+        return 0;
+    case OK_SYS_MKDEV:
+        if (arg1 == 0) {
+            return -OK_EFAULT;
+        }
+        return vfs_create_device((const char *)(uintptr_t)arg1, arg2) == 0
+                   ? 0 : -22;
+    case OK_SYS_READDIR:
+        if (arg1 == 0 || arg2 == 0 || arg3 == 0) {
+            return -OK_EFAULT;
+        }
+        if (arg3 > OK_SYSCALL_READDIR_MAX) {
+            return -22;
+        }
+        return vfs_list_directory((const char *)(uintptr_t)arg1,
+                                  (char *)(uintptr_t)arg2, arg3);
     default:
         (void)arg1;
         (void)arg2;

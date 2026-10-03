@@ -12,6 +12,7 @@
 #include <init/path.h>
 #include <kernel/desktop.h>
 #include <kernel/okfs.h>
+#include <kernel/bootopts.h>
 #include <kvideo/fbcon.h>
 #include "../fs/vfs.h"
 
@@ -67,6 +68,12 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
         panic("Invalid multiboot magic number!");
     }
 
+    struct multiboot_info *mbi = (struct multiboot_info *)multiboot_addr;
+    assert(mbi != NULL);
+    bootopts_init((mbi->flags & (1u << 2))
+                      ? (const char *)(uintptr_t)mbi->cmdline : 0);
+    k_set_quiet(bootopts_quiet());
+
     interrupts_init();
 
     if (init_keyboard() != 0) {
@@ -74,9 +81,9 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
     }
 
     vfs_init();
-
-    struct multiboot_info *mbi = (struct multiboot_info *)multiboot_addr;
-    assert(mbi != NULL);
+    if (vfs_set_console(bootopts_console_path()) != 0) {
+        panic("Invalid console= boot parameter!");
+    }
 
     if (fb_init(mbi) != 0) {
         k_print("[GFX] Linear framebuffer unavailable. Continuing without it.\n");

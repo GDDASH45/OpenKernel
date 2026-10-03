@@ -1,10 +1,16 @@
 #include "vfs.h"
 #include <write/write.h>
+#include <driver/keyboard.h>
 
 #define MAX_VFS_NODES 256
+#define MAX_VFS_MOUNTS 16
 static struct vfs_node node_pool[MAX_VFS_NODES];
+static struct vfs_mount mount_pool[MAX_VFS_MOUNTS];
 static uint32_t node_count = 0;
+static uint32_t mount_count = 0;
 static struct vfs_node root_node = { "/", VFS_DIRECTORY, 0, 0, 0, 0, 0, 0, 0 };
+static struct vfs_node *active_console;
+static uint32_t random_state = 0x4F70656Bu;
 
 static int console_device_write(struct vfs_node *node, const char *buffer,
                                 uint32_t size) {
@@ -14,6 +20,50 @@ static int console_device_write(struct vfs_node *node, const char *buffer,
     }
     for (uint32_t index = 0; index < size; index++) {
         k_print_char(buffer[index]);
+    }
+    return (int)size;
+}
+
+static int device_read(struct vfs_node *node, char *buffer, uint32_t size) {
+    uint32_t type = (uint32_t)(uintptr_t)node->data;
+
+    if (buffer == 0 && size != 0) {
+        return -1;
+    }
+    if (type == VFS_DEVICE_NULL || type == VFS_DEVICE_CONSOLE) {
+        return 0;
+    }
+    if (type == VFS_DEVICE_KEYBOARD) {
+        uint32_t copied = 0;
+        while (copied < size) {
+            char character;
+            if (!keyboard_try_get_char(&character)) {
+                break;
+            }
+            buffer[copied++] = character;
+        }
+        return (int)copied;
+    }
+    for (uint32_t index = 0; index < size; index++) {
+        if (type == VFS_DEVICE_RANDOM) {
+            random_state = random_state * 1664525u + 1013904223u;
+            buffer[index] = (char)(random_state >> 24);
+        } else {
+            buffer[index] = 0;
+        }
+    }
+    return (int)size;
+}
+
+static int device_write(struct vfs_node *node, const char *buffer,
+                        uint32_t size) {
+    uint32_t type = (uint32_t)(uintptr_t)node->data;
+
+    if (buffer == 0 && size != 0) {
+        return -1;
+    }
+    if (type == VFS_DEVICE_CONSOLE) {
+        return console_device_write(node, buffer, size);
     }
     return (int)size;
 }
@@ -99,6 +149,13 @@ struct vfs_node *vfs_lookup(struct vfs_node *root, const char *path) {
     }
 
     while (*rest != '\0') {
+        if (current->flags & VFS_MOUNTED) {
+            struct vfs_mount *mount = (struct vfs_mount *)current->data;
+            if (mount == 0 || mount->root == 0) {
+                return 0;
+            }
+            current = mount->root;
+        }
         rest = vfs_next_path_component(rest, component, sizeof(component));
         if (component[0] == '\0') {
             break;
@@ -264,25 +321,62 @@ struct vfs_node *vfs_create_file(struct vfs_node *root, const char *path,
     return file;
 }
 
-int vfs_mount_fs(struct vfs_node *parent, const char *name, struct vfs_node *root,
-                 int (*reader)(const char *path, void *buf, uint32_t size),
-                 int (*writer)(const char *path, const void *buf, uint32_t size)) {
+static int __internal_mount(struct vfs_node *parent, const char *name,
+                            struct vfs_node *root,
+                            int (*reader)(const char *path, void *buf,
+                                          uint32_t size),
+                            int (*writer)(const char *path, const void *buf,
+                                          uint32_t size)) {
     struct vfs_node *mount_node;
+    struct vfs_node *child;
+    struct vfs_mount *mount;
+    uint32_t index = 0;
 
-    if (parent == 0 || name == 0 || root == 0) {
+    if (parent == 0 || !(parent->flags & VFS_DIRECTORY) || name == 0 ||
+        name[0] == '\0' || root == 0 || mount_count >= MAX_VFS_MOUNTS) {
         return -1;
+    }
+    while (name[index] != '\0') {
+        if (name[index] == '/' || index >= sizeof(mount->name) - 1) {
+            return -1;
+        }
+        index++;
+    }
+    for (child = parent->children; child != 0; child = child->next) {
+        uint32_t character = 0;
+        while (name[character] != '\0' &&
+               child->name[character] == name[character]) {
+            character++;
+        }
+        if (name[character] == '\0' && child->name[character] == '\0') {
+            return -1;
+        }
     }
 
     mount_node = vfs_create_node(name, VFS_DIRECTORY | VFS_MOUNTED, parent);
     if (mount_node == 0) {
         return -1;
     }
-    mount_node->data = root;
+    mount = &mount_pool[mount_count++];
+    for (index = 0; index < sizeof(mount->name); index++) {
+        mount->name[index] = name[index];
+        if (name[index] == '\0') {
+            break;
+        }
+    }
+    mount->root = root;
+    mount->read = reader;
+    mount->write = writer;
+    mount_node->data = mount;
     mount_node->read = 0;
     mount_node->write = 0;
-    (void)reader;
-    (void)writer;
     return 0;
+}
+
+int vfs_mount_fs(struct vfs_node *parent, const char *name, struct vfs_node *root,
+                 int (*reader)(const char *path, void *buf, uint32_t size),
+                 int (*writer)(const char *path, const void *buf, uint32_t size)) {
+    return __internal_mount(parent, name, root, reader, writer);
 }
 
 int vfs_exists(struct vfs_node *root, const char *path) {
@@ -292,7 +386,15 @@ int vfs_exists(struct vfs_node *root, const char *path) {
 int vfs_read_file(struct vfs_node *root, const char *path, char *buf, uint32_t size) {
     struct vfs_node *node = vfs_lookup(root, path);
 
-    if (node == 0 || buf == 0 || node->read == 0) {
+    if (node == 0 || buf == 0) {
+        return -1;
+    }
+    if (node->flags & VFS_MOUNTED) {
+        struct vfs_mount *mount = (struct vfs_mount *)node->data;
+        return mount != 0 && mount->read != 0
+                   ? mount->read("/", buf, size) : -1;
+    }
+    if (node->read == 0) {
         return -1;
     }
     return node->read(node, buf, size);
@@ -301,26 +403,144 @@ int vfs_read_file(struct vfs_node *root, const char *path, char *buf, uint32_t s
 int vfs_write_file(struct vfs_node *root, const char *path, const char *buf, uint32_t size) {
     struct vfs_node *node = vfs_lookup(root, path);
 
-    if (node == 0 || buf == 0 || node->write == 0) {
+    if (node == 0 || buf == 0) {
+        return -1;
+    }
+    if (node->flags & VFS_MOUNTED) {
+        struct vfs_mount *mount = (struct vfs_mount *)node->data;
+        return mount != 0 && mount->write != 0
+                   ? mount->write("/", buf, size) : -1;
+    }
+    if (node->write == 0) {
         return -1;
     }
     return node->write(node, buf, size);
 }
 
+int vfs_set_console(const char *path) {
+    struct vfs_node *node = vfs_lookup(vfs_get_root(), path);
+    static const char tty_prefix[] = "/device/tty";
+
+    if (path == 0) {
+        return -1;
+    }
+    if (node == 0) {
+        uint32_t index = 0;
+        while (tty_prefix[index] != '\0' && path[index] == tty_prefix[index]) {
+            index++;
+        }
+        if (tty_prefix[index] != '\0' || path[index] == '\0') {
+            return -1;
+        }
+        while (path[index] >= '0' && path[index] <= '9') {
+            index++;
+        }
+        if (path[index] != '\0') {
+            return -1;
+        }
+        node = vfs_lookup(vfs_get_root(), "/device/console");
+    }
+    if (node == 0 || !(node->flags & VFS_DEVICE) || node->write == 0) {
+        return -1;
+    }
+    active_console = node;
+    return 0;
+}
+
+int vfs_console_write(const char *buffer, uint32_t size) {
+    if (active_console == 0 || active_console->write == 0 ||
+        (buffer == 0 && size != 0)) {
+        return -1;
+    }
+    return active_console->write(active_console, buffer, size);
+}
+
+int vfs_create_device(const char *path, uint32_t type) {
+    struct vfs_node *node;
+
+    if (path == 0 || path[0] != '/' || path[1] == '\0' ||
+        (type != VFS_DEVICE_CONSOLE && type != VFS_DEVICE_NULL &&
+         type != VFS_DEVICE_ZERO && type != VFS_DEVICE_RANDOM &&
+         type != VFS_DEVICE_KEYBOARD)) {
+        return -1;
+    }
+    node = vfs_lookup(vfs_get_root(), path);
+    if (node != 0 && !(node->flags & VFS_DEVICE)) {
+        return -1;
+    }
+    if (node == 0) {
+        node = vfs_create_file(vfs_get_root(), path, device_read,
+                               device_write);
+    }
+    if (node == 0) {
+        return -1;
+    }
+
+    node->flags = VFS_FILE | VFS_DEVICE;
+    node->read = device_read;
+    node->write = device_write;
+    node->data = (void *)(uintptr_t)type;
+    if (type == VFS_DEVICE_CONSOLE && active_console == 0) {
+        active_console = node;
+    }
+    return 0;
+}
+
+int vfs_list_directory(const char *path, char *buffer, uint32_t capacity) {
+    struct vfs_node *directory;
+    uint32_t used = 0;
+
+    if (buffer == 0 || capacity == 0) {
+        return -1;
+    }
+    directory = vfs_lookup(vfs_get_root(), path);
+    if (directory == 0 || !(directory->flags & VFS_DIRECTORY)) {
+        return -1;
+    }
+
+    for (struct vfs_node *child = directory->children; child != 0;
+         child = child->next) {
+        uint32_t length = 0;
+        while (length < VFS_NAME_SIZE && child->name[length] != '\0') {
+            length++;
+        }
+        uint32_t suffix = (child->flags & VFS_DIRECTORY) ? 1u : 0u;
+        if (used + length + suffix + 1 >= capacity) {
+            buffer[used] = '\0';
+            return -2;
+        }
+        for (uint32_t index = 0; index < length; index++) {
+            buffer[used++] = child->name[index];
+        }
+        if (suffix != 0) {
+            buffer[used++] = '/';
+        }
+        buffer[used++] = '\n';
+    }
+    buffer[used] = '\0';
+    return (int)used;
+}
+
 void mount_essential_folders(void) {
-    vfs_mkdir(vfs_get_root(), "/etc");
-    vfs_mkdir(vfs_get_root(), "/home");
-    vfs_mkdir(vfs_get_root(), "/var");
-    vfs_mkdir(vfs_get_root(), "/usr");
-    vfs_mkdir(vfs_get_root(), "/dev");
+    char tty_path[] = "/device/tty0";
+    struct vfs_node *console;
+
+    /* Only create the runtime device namespace; other directories must be
+       created by a filesystem or an explicit userspace/device request. */
     vfs_mkdir(vfs_get_root(), "/device");
-    vfs_mkdir(vfs_get_root(), "/sys");
-    vfs_mkdir(vfs_get_root(), "/proc");
-    struct vfs_node *console = vfs_create_file(vfs_get_root(),
-                                               "/device/console", 0,
-                                               console_device_write);
+    console = vfs_create_file(vfs_get_root(), "/device/console", 0,
+                              console_device_write);
     if (console != 0) {
         console->flags |= VFS_DEVICE;
+        active_console = console;
+    }
+    for (char terminal = '0'; terminal <= '9'; terminal++) {
+        tty_path[11] = terminal;
+        struct vfs_node *tty = vfs_create_file(vfs_get_root(), tty_path, 0,
+                                               console_device_write);
+        if (tty != 0) {
+            tty->flags |= VFS_DEVICE;
+        }
     }
     k_print("[VFS] Essential directories initialized.\n");
 }

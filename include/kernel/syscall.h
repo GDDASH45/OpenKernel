@@ -9,6 +9,16 @@
 #define OK_SYS_CONSOLE_WRITE 4u
 #define OK_SYS_FORK   5u
 #define OK_SYS_EXECVE 6u
+#define OK_SYS_GETCHAR 7u
+#define OK_SYS_CLEAR  8u
+#define OK_SYS_MKDEV  9u
+#define OK_SYS_READDIR 10u
+
+#define OK_DEVICE_CONSOLE 1u
+#define OK_DEVICE_NULL    2u
+#define OK_DEVICE_ZERO    3u
+#define OK_DEVICE_RANDOM  4u
+#define OK_DEVICE_KEYBOARD 5u
 
 #define OK_STDIN_FILENO  0
 #define OK_STDOUT_FILENO 1

@@ -3,6 +3,7 @@
 
 static int cursor_row = 0;
 static int cursor_col = 0;
+static int quiet_mode;
 
 #define VGA_ADDRESS 0xB8000
 #define MAX_ROWS 25
@@ -78,9 +79,16 @@ void k_print_char(char c) {
 }
 
 void k_print(const char *str) {
+    if (quiet_mode) {
+        return;
+    }
     int i = 0;
     while (str[i] != '\0') {
         k_print_char(str[i]);
         i++;
     }
+}
+
+void k_set_quiet(int quiet) {
+    quiet_mode = quiet != 0;
 }

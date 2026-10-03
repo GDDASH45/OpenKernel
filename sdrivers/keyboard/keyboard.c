@@ -10,6 +10,9 @@
 #define PS2_INPUT_FULL       0x02
 #define PS2_AUX_DATA         0x20
 #define KEYBOARD_ACK         0xFA
+#define KEYBOARD_SET_TYPEMATIC 0xF3
+#define KEYBOARD_TYPEMATIC_SLOW 0x7F
+#define KEYBOARD_ENABLE_SCAN   0xF4
 #define KEYBOARD_BUFFER_SIZE 128
 #define KEYBOARD_BUFFER_MASK (KEYBOARD_BUFFER_SIZE - 1)
 
@@ -44,9 +47,11 @@ static const char shifted_keymap[128] = {
 static volatile char character_buffer[KEYBOARD_BUFFER_SIZE];
 static volatile uint8_t buffer_head;
 static volatile uint8_t buffer_tail;
-static volatile uint8_t shift_down;
+static volatile uint8_t shift_state;
 static volatile uint8_t caps_lock;
+static volatile uint8_t key_down[128];
 static volatile uint8_t extended_scancode;
+static volatile uint8_t pause_bytes_remaining;
 static volatile uint8_t keyboard_ready;
 
 static int wait_for_input_empty(void) {
@@ -138,34 +143,52 @@ int init_keyboard(void) {
         (void)port_byte_in(PS2_DATA);
     }
 
-    if (!send_keyboard_command(0xF4)) { /* Enable keyboard scanning. */
+    /*
+     * Use the longest initial delay and slowest repeat rate. The PS/2 default
+     * typematic rate is fast enough for one held key to flood a shell line.
+     */
+    if (send_keyboard_command(KEYBOARD_SET_TYPEMATIC)) {
+        /* Repeat tuning is optional; unsupported keyboards remain usable. */
+        (void)send_keyboard_command(KEYBOARD_TYPEMATIC_SLOW);
+    }
+    while ((port_byte_in(PS2_STATUS) &
+            (PS2_OUTPUT_FULL | PS2_AUX_DATA)) == PS2_OUTPUT_FULL) {
+        (void)port_byte_in(PS2_DATA);
+    }
+
+    if (!send_keyboard_command(KEYBOARD_ENABLE_SCAN)) {
         return -1;
     }
 
     buffer_head = 0;
     buffer_tail = 0;
-    shift_down = 0;
+    shift_state = 0;
     caps_lock = 0;
+    for (uint32_t code = 0; code < sizeof(key_down); code++) {
+        key_down[code] = 0;
+    }
     extended_scancode = 0;
+    pause_bytes_remaining = 0;
     keyboard_ready = 1;
     interrupts_enable_irq(1);
     return 0;
 }
 
-void keyboard_irq_handler(void) {
-    uint8_t status = port_byte_in(PS2_STATUS);
-    uint8_t scancode;
+static void keyboard_process_scancode(uint8_t scancode) {
     uint8_t released;
     uint8_t code;
     char character;
 
-    if (!keyboard_ready || (status & (PS2_OUTPUT_FULL | PS2_AUX_DATA)) !=
-                           PS2_OUTPUT_FULL) {
+    if (pause_bytes_remaining != 0) {
+        pause_bytes_remaining--;
         return;
     }
-
-    scancode = port_byte_in(PS2_DATA);
-    if (scancode == 0xE0 || scancode == 0xE1) {
+    if (scancode == 0xE1) {
+        pause_bytes_remaining = 5;
+        extended_scancode = 0;
+        return;
+    }
+    if (scancode == 0xE0) {
         extended_scancode = 1;
         return;
     }
@@ -176,8 +199,23 @@ void keyboard_irq_handler(void) {
 
     released = (scancode & 0x80) != 0;
     code = scancode & 0x7F;
-    if (code == 0x2A || code == 0x36) {
-        shift_down = released ? 0 : 1;
+    if (released) {
+        key_down[code] = 0;
+    } else {
+        /* PS/2 typematic repeats are repeated make codes without a break. */
+        if (key_down[code]) {
+            return;
+        }
+        key_down[code] = 1;
+    }
+    if (code == 0x2A) {
+        shift_state = (uint8_t)((shift_state & (uint8_t)~0x01) |
+                                (released ? 0 : 0x01));
+        return;
+    }
+    if (code == 0x36) {
+        shift_state = (uint8_t)((shift_state & (uint8_t)~0x02) |
+                                (released ? 0 : 0x02));
         return;
     }
     if (released) {
@@ -192,12 +230,23 @@ void keyboard_irq_handler(void) {
     }
 
     character = keymap[code];
-    if ((character >= 'a' && character <= 'z') && (shift_down ^ caps_lock)) {
+    if ((character >= 'a' && character <= 'z') &&
+        (((shift_state != 0) ? 1 : 0) ^ caps_lock)) {
         character = (char)(character - 'a' + 'A');
-    } else if (shift_down && shifted_keymap[code] != 0) {
+    } else if (shift_state != 0 && shifted_keymap[code] != 0) {
         character = shifted_keymap[code];
     }
     queue_character(character);
+}
+
+void keyboard_irq_handler(void) {
+    uint8_t status = port_byte_in(PS2_STATUS);
+
+    if (!keyboard_ready || (status & (PS2_OUTPUT_FULL | PS2_AUX_DATA)) !=
+                           PS2_OUTPUT_FULL) {
+        return;
+    }
+    keyboard_process_scancode(port_byte_in(PS2_DATA));
 }
 
 int keyboard_try_get_char(char *character) {
@@ -208,6 +257,17 @@ int keyboard_try_get_char(char *character) {
     }
 
     __asm__ volatile ("pushfl; popl %0; cli" : "=r"(flags) : : "memory");
+    /*
+     * Also poll the controller while servicing a read syscall. This keeps
+     * input usable on machines/firmware that do not deliver IRQ1 reliably.
+     * Leave auxiliary (mouse) bytes for the mouse IRQ handler.
+     */
+    for (uint32_t drained = 0; drained < 16 &&
+         (port_byte_in(PS2_STATUS) & (PS2_OUTPUT_FULL | PS2_AUX_DATA)) ==
+             PS2_OUTPUT_FULL; drained++) {
+        keyboard_process_scancode(port_byte_in(PS2_DATA));
+    }
+
     if (buffer_tail == buffer_head) {
         __asm__ volatile ("pushl %0; popfl" : : "r"(flags) : "memory", "cc");
         return 0;
