@@ -1,4 +1,5 @@
 #include "vfs.h"
+#include <kernel/tar.h>
 #include <write/write.h>
 #include <driver/keyboard.h>
 
@@ -519,6 +520,87 @@ int vfs_list_directory(const char *path, char *buffer, uint32_t capacity) {
     }
     buffer[used] = '\0';
     return (int)used;
+}
+
+static uint32_t vfs_tar_size(const char *field) {
+    uint32_t size = 0;
+
+    for (uint32_t index = 0; index < 11; index++) {
+        if (field[index] >= '0' && field[index] <= '7') {
+            size = size * 8 + (uint32_t)(field[index] - '0');
+        }
+    }
+    return size;
+}
+
+int vfs_index_tar(uint32_t tar_address) {
+    struct tar_header *header = (struct tar_header *)(uintptr_t)tar_address;
+    int indexed = 0;
+
+    if (header == 0 || header->magic[0] != 'u' || header->magic[1] != 's' ||
+        header->magic[2] != 't' || header->magic[3] != 'a' ||
+        header->magic[4] != 'r') {
+        return -1;
+    }
+
+    while (header->name[0] != '\0') {
+        char path[VFS_MAX_PATH];
+        uint32_t path_length = 1;
+        uint32_t prefix_length = 0;
+        uint32_t name_offset = 0;
+        int valid = 1;
+
+        path[0] = '/';
+        path[1] = '\0';
+
+        while (prefix_length < sizeof(header->prefix) &&
+               header->prefix[prefix_length] != '\0') {
+            if (path_length + 1 >= sizeof(path)) {
+                valid = 0;
+                break;
+            }
+            path[path_length++] = header->prefix[prefix_length++];
+        }
+        if (valid && prefix_length != 0) {
+            if (path_length + 1 >= sizeof(path)) {
+                valid = 0;
+            } else {
+                path[path_length++] = '/';
+            }
+        }
+
+        if (header->name[0] == '.' && header->name[1] == '/') {
+            name_offset = 2;
+        }
+        while (valid && header->name[name_offset] != '\0') {
+            if (path_length + 1 >= sizeof(path)) {
+                valid = 0;
+                break;
+            }
+            path[path_length++] = header->name[name_offset++];
+        }
+        path[path_length] = '\0';
+
+        if (valid && path_length > 1) {
+            if (header->typeflag == '5') {
+                if (vfs_mkdir(vfs_get_root(), path) == 0) {
+                    return -1;
+                }
+                indexed++;
+            } else if (header->typeflag == '\0' || header->typeflag == '0') {
+                if (vfs_create_file(vfs_get_root(), path, 0, 0) == 0) {
+                    return -1;
+                }
+                indexed++;
+            }
+        }
+
+        uint32_t size = vfs_tar_size(header->size);
+        tar_address += 512 + ((size + 511) / 512) * 512;
+        header = (struct tar_header *)(uintptr_t)tar_address;
+    }
+
+    return indexed;
 }
 
 void mount_essential_folders(void) {

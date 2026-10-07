@@ -24,6 +24,12 @@
 #define OK_STDOUT_FILENO 1
 #define OK_STDERR_FILENO 2
 
+#define OK_EAGAIN 11
+#define OK_EBADF  9
+#define OK_EFAULT 14
+#define OK_EIO    5
+#define OK_ENOSYS 38
+
 int32_t syscall_dispatch(uint32_t number, uint32_t arg1, uint32_t arg2,
 						 uint32_t arg3);
 

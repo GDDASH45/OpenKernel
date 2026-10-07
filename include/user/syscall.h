@@ -112,10 +112,10 @@ static inline int32_t ok_getchar(void) {
 
     do {
         result = ok_syscall3(OK_SYS_GETCHAR, 0, 0, 0);
-        if (result == -11) {
+        if (result == -OK_EAGAIN) {
             ok_yield();
         }
-    } while (result == -11);
+    } while (result == -OK_EAGAIN);
     return result;
 }
 

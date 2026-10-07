@@ -108,6 +108,10 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr)
 
     uint32_t initrd_start = mod->mod_start;
 
+    if (vfs_index_tar(initrd_start) < 0) {
+        k_print("[VFS] Could not index initramfs directories.\n");
+    }
+
     if (okfs_mount() != 0) {
         k_print("[FS] Persistent storage unavailable.\n");
     } else {

@@ -55,5 +55,6 @@ int vfs_set_console(const char *path);
 int vfs_console_write(const char *buffer, uint32_t size);
 int vfs_create_device(const char *path, uint32_t type);
 int vfs_list_directory(const char *path, char *buffer, uint32_t capacity);
+int vfs_index_tar(uint32_t tar_address);
 
 #endif
