@@ -5,6 +5,8 @@
 #include <kernel/syscall.h>
 #include <user/syscall.h>
 
+typedef int32_t (*oso_entry_t)(void);
+
 /*
  * Process ABI wrappers for OpenKernel's current 32-bit int 0x80 interface.
  * fork() currently returns -ENOSYS until the kernel has isolated address
@@ -16,6 +18,16 @@ static inline int32_t fork(void) {
 
 static inline int32_t getpid(void) {
     return ok_getpid();
+}
+
+static inline void process_exit(int32_t status) {
+    ok_exit(status);
+}
+
+/* Loads an OSO and returns its int32_t(void) entry, or NULL on failure. */
+static inline oso_entry_t oso_load(const char *path) {
+    int32_t result = ok_load_oso(path);
+    return result < 0 ? 0 : (oso_entry_t)(uintptr_t)(uint32_t)result;
 }
 
 static inline int32_t execve(const char *path, char *const argv[],

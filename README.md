@@ -26,6 +26,20 @@ You can also find a minimal initramfs.img in bin/initramfs.img
 For now as of 0.0.1-rc1 it can only understand a ustar tar archive
 The initramfs must have a init script
 
+## OKX shared objects
+
+`okcc.sh source.c output.oso` packages a flat `OSO1` shared object. The source
+must define an `int32_t _oso_entry(void)` function. At runtime, userspace can
+call `oso_load("/path/to/object.oso")` from `<user/process.h>`; it returns an
+`oso_entry_t` function pointer or null if the object could not be found or
+loaded. The returned function can then be called directly.
+
+This initial OSO format is a fixed-address flat image (loaded at `0x300000`),
+not an ELF-style relocatable object: objects must be self-contained, and only
+the entry function is exported. It shares the current process address space
+and does not yet support relocation, unloading, or multiple objects at
+different load addresses. Keep each OSO within its reserved 1 MiB region.
+
 run these scripts in order:
 
 make -j$(nproc)

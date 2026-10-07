@@ -2,6 +2,11 @@ CC = gcc
 AS = nasm
 HOST_CC ?= cc
 
+RELVERSION   := 0
+SUBVERSION   := 0
+PATCHVERSION := 2
+EXTRAVERSION := -rc1
+
 BUILD_DIR = build
 KERNEL ?= $(BUILD_DIR)/kernel.bin
 LINUX_PROGRAM ?= $(BUILD_DIR)/openkernel

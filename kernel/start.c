@@ -61,11 +61,17 @@ static void create_system_files(void) {
     }
 }
 
-void kernel_main(uint32_t magic, uint32_t multiboot_addr) 
+void kernel_main(uint32_t magic, uint32_t multiboot_addr, uint32_t oem) 
 {
     k_clear_screen();
     if (magic != 0x2BADB002) {
         panic("Invalid multiboot magic number!");
+    }
+
+    if (oem == 1) {
+        /* OEM Initialization placed here */
+    } else {
+        /**/
     }
 
     struct multiboot_info *mbi = (struct multiboot_info *)multiboot_addr;

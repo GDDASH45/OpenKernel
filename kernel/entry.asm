@@ -1,4 +1,4 @@
-; kernel/entry.asm -- setup grub Multiboot
+; kernel/entry.asm -- setup GRUB Multiboot
 
 BITS 32
 
@@ -6,10 +6,6 @@ section .multiboot
 align 4
 
 multiboot_header:
-    ;dd 0x1BADB002
-    ;dd 0x00000007
-    ;dd -(0x1BADB002 + 0x00000007)
-
     dd 0x1BADB002
     dd 0x00000007
     dd -(0x1BADB002 + 0x00000007)
@@ -29,6 +25,16 @@ _start:
     ; Set up kernel stack
     mov esp, stack_top
 
+    ; OpenKernel boot information
+    ;
+    ; ECX = OEM flag
+    ; 1 = OEM boot
+    ; 0 = normal boot
+    ;
+    mov ecx, 0
+
+    ; kernel_main(eax, ebx, ecx)
+    push ecx
     push ebx
     push eax
 
@@ -47,6 +53,5 @@ stack_bottom:
     resb 16384
 
 stack_top:
-
 
 section .note.GNU-stack noalloc noexec nowrite progbits

@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+
+#define OK_SYS_EXIT 0u
 #define OK_SYS_WRITE  1u
 #define OK_SYS_GETPID  2u
 #define OK_SYS_YIELD  3u
@@ -13,6 +15,7 @@
 #define OK_SYS_CLEAR  8u
 #define OK_SYS_MKDEV  9u
 #define OK_SYS_READDIR 10u
+#define OK_SYS_LOAD_OSO 11u
 
 #define OK_DEVICE_CONSOLE 1u
 #define OK_DEVICE_NULL    2u

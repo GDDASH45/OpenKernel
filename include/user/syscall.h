@@ -38,6 +38,20 @@ static inline int32_t ok_write(int fd, const void *buffer, uint32_t size) {
     return (int32_t)written;
 }
 
+static inline void ok_exit(int status)
+{
+    (void)ok_syscall3(
+        OK_SYS_EXIT,
+        (uint32_t)status,
+        0,
+        0
+    );
+
+    for (;;) {
+        __asm__ volatile ("pause");
+    }
+}
+
 static inline int32_t ok_console_write(const void *buffer, uint32_t size) {
     const uint8_t *bytes = (const uint8_t *)buffer;
     uint32_t written = 0;
@@ -101,6 +115,14 @@ static inline int32_t ok_listdir(const char *path, char *buffer,
     }
     return ok_syscall3(OK_SYS_READDIR, (uint32_t)(uintptr_t)path,
                        (uint32_t)(uintptr_t)buffer, capacity);
+}
+
+static inline int32_t ok_load_oso(const char *path) {
+    if (path == 0 || path[0] == '\0') {
+        return -14;
+    }
+    return ok_syscall3(OK_SYS_LOAD_OSO,
+                       (uint32_t)(uintptr_t)path, 0, 0);
 }
 
 static inline int32_t ok_yield(void) {

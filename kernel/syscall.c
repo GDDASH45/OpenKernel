@@ -36,6 +36,10 @@ int32_t syscall_dispatch(uint32_t number,
                          uint32_t arg2,
                          uint32_t arg3) {
     switch (number) {
+    case OK_SYS_EXIT:
+        process_exit_current((int32_t)arg1);
+        return 0;
+
     case OK_SYS_WRITE: {
         const char *buffer = (const char *)(uintptr_t)arg2;
 
@@ -55,6 +59,12 @@ int32_t syscall_dispatch(uint32_t number,
 
     case OK_SYS_GETPID:
         return (int32_t)process_current_pid();
+
+    case OK_SYS_LOAD_OSO:
+        if (arg1 == 0) {
+            return -OK_EFAULT;
+        }
+        return process_load_oso((const char *)(uintptr_t)arg1);
 
     case OK_SYS_YIELD:
         __asm__ volatile ("pause" ::: "memory");

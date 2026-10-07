@@ -16,6 +16,22 @@ void initrd_set_base(uint32_t addr) {
     process_system_init();
 }
 
+int32_t process_load_oso(const char *path) {
+    uint32_t file_size = 0;
+    const char *file_data;
+    void (*entry)(void) = 0;
+
+    if (path == 0 || path[0] == '\0' || g_initrd_start == 0) {
+        return -1;
+    }
+
+    file_data = tar_get_file(g_initrd_start, path, &file_size);
+    if (file_data == 0 || binfmt_oso_load(file_data, file_size, &entry) != 0) {
+        return -1;
+    }
+    return (int32_t)(uintptr_t)entry;
+}
+
 int execve(const char *filename, char *const argv[], char *const envp[]) {
     const char *archive_name = filename;
 
