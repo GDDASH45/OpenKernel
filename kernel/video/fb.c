@@ -186,24 +186,17 @@ void fb_draw_text(int x, int y, const char *text, uint32_t color) {
 }
 
 void fb_panic_screen(const char *message) {
+    (void)message;
+
     if (framebuffer == 0) {
         return;
     }
 
-    const uint32_t background = 0xFF7FB5;
-    const uint32_t panel = 0xF4A9C9;
-    const uint32_t title = 0xFFFFFF;
-    const uint32_t text = 0xFFF3F8;
-    const uint32_t accent = 0xD12D6D;
-    const char *panic_message = message != 0 ? message : "Unknown kernel panic";
+    const uint32_t background = 0x000000;
+    const uint32_t accent = 0xC02020;
 
     fb_clear(background);
-    fb_fill_rect(24, 20, (int)framebuffer_width - 48, (int)framebuffer_height - 40, panel);
     fb_fill_rect(32, 28, (int)framebuffer_width - 64, 4, accent);
-    fb_draw_text(48, 48, "KERNEL PANIC", title);
-    fb_draw_text(48, 80, "The kernel halted unexpectedly.", text);
-    fb_draw_text(48, 116, panic_message, title);
-    fb_draw_text(48, (int)framebuffer_height - 52, "System halted.", 0xFFE7F0);
 }
 
 uint32_t fb_width(void) {

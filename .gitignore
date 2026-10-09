@@ -15,3 +15,6 @@ mnt/
 copytodisk.sh
 .build_number
 bionicbox/
+
+**/generated/**
+openkernel

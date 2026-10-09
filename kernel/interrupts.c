@@ -29,26 +29,6 @@ struct idt_pointer {
     uint32_t base;
 } __attribute__((packed));
 
-struct interrupt_registers {
-    uint32_t gs;
-    uint32_t fs;
-    uint32_t es;
-    uint32_t ds;
-    uint32_t edi;
-    uint32_t esi;
-    uint32_t ebp;
-    uint32_t saved_esp;
-    uint32_t ebx;
-    uint32_t edx;
-    uint32_t ecx;
-    uint32_t eax;
-    uint32_t vector;
-    uint32_t error_code;
-    uint32_t eip;
-    uint32_t cs;
-    uint32_t eflags;
-};
-
 extern uintptr_t isr_stub_table[32];
 extern uintptr_t irq_stub_table[16];
 extern void syscall_stub(void);
@@ -138,15 +118,15 @@ void interrupts_enable(void) {
 }
 
 void interrupt_handler(void *registers) {
-    struct interrupt_registers *frame =
-        (struct interrupt_registers *)registers;
+    struct kernel_panic_registers *frame =
+        (struct kernel_panic_registers *)registers;
     uint32_t vector = frame->vector;
 
     if (vector < 32) {
         char message[] = "CPU exception 00";
         message[14] = (char)('0' + (vector / 10));
         message[15] = (char)('0' + (vector % 10));
-        panic(message);
+        panic_at(message, __FILE__, __LINE__, frame);
     }
 
     if (vector == SYSCALL_VECTOR) {
