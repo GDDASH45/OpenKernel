@@ -2,6 +2,7 @@
 #include <kernel/syscall.h>
 #include <kernel/process.h>
 #include <driver/keyboard.h>
+#include <kvideo/fb.h>
 #include "../fs/vfs.h"
 #include <write/write.h>
 
@@ -97,6 +98,43 @@ int32_t syscall_dispatch(uint32_t number,
     case OK_SYS_CLEAR:
         k_clear_screen();
         return 0;
+
+    case OK_SYS_FB_WRITE:
+        if (arg2 == 0 && arg3 != 0) {
+            return -OK_EFAULT;
+        }
+        if (arg3 > 1024u * 1024u) {
+            return -22;
+        }
+        return fb_write_at(arg1, (const void *)(uintptr_t)arg2, arg3) < 0
+                   ? -OK_EIO
+                   : (int32_t)arg3;
+
+    case OK_SYS_FB_PUT_PIXEL:
+        return fb_put_rgb_pixel(arg1, arg2, arg3) == 0 ? 0 : -OK_EIO;
+
+    case OK_SYS_FB_CLEAR:
+        if (!fb_is_ready()) {
+            return -OK_EIO;
+        }
+        fb_clear(arg1);
+        return 0;
+
+    case OK_SYS_FB_GET_INFO: {
+        struct ok_fb_info *info = (struct ok_fb_info *)(uintptr_t)arg1;
+
+        if (info == 0) {
+            return -OK_EFAULT;
+        }
+        if (!fb_is_ready()) {
+            return -OK_EIO;
+        }
+        info->width = fb_width();
+        info->height = fb_height();
+        info->pitch = fb_pitch();
+        info->bits_per_pixel = fb_bits_per_pixel();
+        return 0;
+    }
 
     case OK_SYS_MKDEV:
         if (arg1 == 0) {

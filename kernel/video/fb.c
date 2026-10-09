@@ -148,6 +148,37 @@ static void put_rgb_pixel(int x, int y, uint32_t color) {
     }
 }
 
+int fb_is_ready(void) {
+    return framebuffer != 0 && framebuffer_width != 0 &&
+           framebuffer_height != 0 && framebuffer_pitch != 0;
+}
+
+int fb_write_at(uint32_t offset, const void *buf, uint32_t size) {
+    const uint8_t *source = (const uint8_t *)buf;
+    uint64_t framebuffer_size;
+
+    if (!fb_is_ready() || (buf == 0 && size != 0)) {
+        return -1;
+    }
+    framebuffer_size = (uint64_t)framebuffer_pitch * framebuffer_height;
+    if ((uint64_t)offset > framebuffer_size ||
+        (uint64_t)size > framebuffer_size - offset) {
+        return -1;
+    }
+    for (uint32_t index = 0; index < size; index++) {
+        framebuffer[offset + index] = source[index];
+    }
+    return (int)size;
+}
+
+int fb_put_rgb_pixel(uint32_t x, uint32_t y, uint32_t color) {
+    if (!fb_is_ready() || x >= framebuffer_width || y >= framebuffer_height) {
+        return -1;
+    }
+    put_rgb_pixel((int)x, (int)y, color);
+    return 0;
+}
+
 void fb_clear(uint32_t color) {
     fb_fill_rect(0, 0, (int)framebuffer_width, (int)framebuffer_height, color);
 }
@@ -205,4 +236,12 @@ uint32_t fb_width(void) {
 
 uint32_t fb_height(void) {
     return framebuffer_height;
+}
+
+uint32_t fb_pitch(void) {
+    return framebuffer_pitch;
+}
+
+uint32_t fb_bits_per_pixel(void) {
+    return framebuffer_bpp;
 }

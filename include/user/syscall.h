@@ -104,6 +104,32 @@ static inline int32_t ok_clear(void) {
     return ok_syscall3(OK_SYS_CLEAR, 0, 0, 0);
 }
 
+static inline int32_t ok_fb_write(uint32_t offset, const void *buffer,
+                                  uint32_t size) {
+    if (buffer == 0 && size != 0) {
+        return -OK_EFAULT;
+    }
+    return ok_syscall3(OK_SYS_FB_WRITE, offset,
+                       (uint32_t)(uintptr_t)buffer, size);
+}
+
+static inline int32_t ok_fb_put_pixel(uint32_t x, uint32_t y,
+                                      uint32_t rgb) {
+    return ok_syscall3(OK_SYS_FB_PUT_PIXEL, x, y, rgb);
+}
+
+static inline int32_t ok_fb_clear(uint32_t rgb) {
+    return ok_syscall3(OK_SYS_FB_CLEAR, rgb, 0, 0);
+}
+
+static inline int32_t ok_fb_get_info(struct ok_fb_info *info) {
+    if (info == 0) {
+        return -OK_EFAULT;
+    }
+    return ok_syscall3(OK_SYS_FB_GET_INFO,
+                       (uint32_t)(uintptr_t)info, 0, 0);
+}
+
 static inline int32_t ok_mkdev(const char *path, uint32_t type) {
     return ok_syscall3(OK_SYS_MKDEV, (uint32_t)(uintptr_t)path, type, 0);
 }

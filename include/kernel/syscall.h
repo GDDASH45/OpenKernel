@@ -27,6 +27,20 @@
 #define OK_STDOUT_FILENO 1
 #define OK_STDERR_FILENO 2
 
+#define OK_SYS_FB_WRITE 12u
+#define OK_SYS_FB_PUT_PIXEL 13u
+#define OK_SYS_FB_CLEAR 14u
+#define OK_SYS_FB_GET_INFO 15u
+
+struct ok_fb_info {
+	uint32_t width;
+	uint32_t height;
+	uint32_t pitch;
+	uint32_t bits_per_pixel;
+};
+
+
+
 #define OK_EAGAIN 11
 #define OK_EBADF  9
 #define OK_EFAULT 14

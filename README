@@ -1,85 +1,13 @@
-# OpenKernel
+OpenKernel
+==========
 
-OpenKernel is a custom, minimalist microkernel designed and implemented in **C**. It features a clean separation between the kernel core and userspace, a custom `PMX` binary loader, and `tar` initramfs parsing.
+OpenKernel is an experimental freestanding 32-bit x86 kernel. It boots through
+GRUB/Multiboot, reads a USTAR initramfs, and provides a limited syscall,
+filesystem, display, and input implementation. Loaded programs currently run
+at kernel privilege in shared memory; this is not a protected microkernel.
 
-## Architecture Overview
-
-* **Microkernel Core**: Manages primitive CPU exceptions, memory quotas, and execution handoff.
-* **Userspace Separation**: Core services and utilities execute entirely in userspace, keeping the kernel decoupled from application logic.
-* **PMX Binary Loader**: Custom binary format loader responsible for mapping and executing programs.
-* **Initramfs VFS**: Parses standard `tar` archives to mount an initial ramdisk filesystem during boot.
-* **System call ABI**: Freestanding programs can request console output, a process ID, and yield through `int 0x80` using the wrappers in `include/user/syscall.h`.
-* **Process API**: `include/user/process.h` exposes `fork()`, `execve()`, and `launch()` wrappers.
-
-## Contribution Policy
-
-OpenKernel is written strictly in **C**. 
-
-> **Important**: All contributions, kernel subsystems, and userspace programs must be written in standard C. Code submitted in any other programming language will not be accepted.
-
-## Building and Running
-
-You must run on a linux environment. Run this command if on Ubuntu
-
-sudo apt update && sudo apt install build-essential nasm qemu-system-x86 genisoimage xorriso
-
-You can also find a minimal initramfs.img in bin/initramfs.img
-
-For now as of 0.0.1-rc1 it can only understand a ustar tar archive
-The initramfs must have a init script
-
-run these scripts in order:
-
-make -j$(nproc)
-
-make a iso/boot/grub.cfg that is something like this:
-
-set timeout=0
-set default=0
-
-clear
-
-menuentry "Open Kernel" {
-    multiboot /boot/kernel.bin
-    module /boot/initramfs.img
-    boot
-}
-
-./copy_kernel.sh
-
-./make_iso.sh
-
-this should produce os.iso
-
-
-Ensure you have a cross-compiler toolchain and QEMU installed, then run the build and boot script:
-
-```bash
-./run.sh
-```
-
-
-
-## Linux user-mode wrapper
-
-The Linux executable is a thin launcher for the actual freestanding kernel. It
-does not substitute a hosted shell or reimplement kernel services. Build the
-kernel and launcher with `make linux`; build the boot ISO and start the kernel
-under QEMU with:
-
-```sh
-make run-linux
-```
-
-`run-linux` copies `build/kernel.bin` into the GRUB image, packages `initfs/` as
-the initramfs, creates `os.iso`, then launches QEMU through `build/openkernel`.
-QEMU options can be passed with `QEMU_ARGS`, for example `make run-linux
-QEMU_ARGS="-m 256"`. The wrapper also accepts `OPENKERNEL_QEMU` and
-`OPENKERNEL_ISO` environment variables to select a QEMU executable or ISO path.
-
-`execve()` and `launch()` resolve an executable in the initramfs; `argv` and
-`envp` are currently ignored. `getpid()` returns the ID assigned when the
-kernel enters a loaded program, and `execve()` preserves that ID. `fork()` is
-exposed but returns `-ENOSYS` until OpenKernel has per-process address spaces
-and scheduling. OKX programs still run at kernel privilege level, so this
-syscall ABI is not a memory-protection boundary.
+The maintained project introduction is in README.md. Full implementation
+documentation is indexed at documenetation/index.md, including build and boot
+instructions, syscall and program-loader references, filesystem behavior,
+userspace shell, display/input, sound/time, interrupts, memory, and known
+incomplete features.
