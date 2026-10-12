@@ -23,6 +23,7 @@ BUILD_NUMBER_FILE = .build_number
 
 VERSION_DIR = include/generated
 VERSION_HEADER = $(VERSION_DIR)/version.h
+BUILDENV_HEADER = $(VERSION_DIR)/buildenv.h
 VERSION = $(RELVERSION).$(SUBVERSION).$(PATCHVERSION)$(EXTRAVERSION)
 
 MOD_DIR = $(BUILD_DIR)/mod
@@ -95,8 +96,19 @@ $(VERSION_HEADER):
 		'' \
 		'#endif' > $@
 
+$(BUILDENV_HEADER):
+	@mkdir -p $(VERSION_DIR)
+	@echo "GEN $@"
+	@printf '%s\n' \
+		'#ifndef OPENKERNEL_BUILDENV_H' \
+		'#define OPENKERNEL_BUILDENV_H' \
+		'' \
+		'#define OPENKERNEL_BUILDENV "$(shell uname -a)"' \
+		'' \
+		'#endif' > $@
+
 # Compile C sources.
-$(BUILD_DIR)/c/%.o: %.c $(VERSION_HEADER)
+$(BUILD_DIR)/c/%.o: %.c $(VERSION_HEADER) $(BUILDENV_HEADER)
 	@mkdir -p $(dir $@)
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
