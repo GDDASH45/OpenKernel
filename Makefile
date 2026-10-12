@@ -69,7 +69,7 @@ BUILTIN_ARCHIVES = $(C_BUILTIN_ARCHIVES) $(ASM_BUILTIN_ARCHIVES)
 # Automatic dependency files.
 DEPS = $(C_OBJECTS:.o=.d) $(MOD_OBJS:.mo=.d)
 
-CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie -Iinclude -MMD -MP
+CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie -Iinclude -MMD -MP -DCONFIG_DRM_KERNELPANIC
 LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 -nostdlib -fno-pie -no-pie
 PLAIN_LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 -nostdlib -fno-pie -no-pie -Wl,-e,kernel_main
 ASFLAGS = -f elf32
@@ -210,6 +210,6 @@ patch_modules:
 
 # Remove generated build products.
 clean:
-	rm -rf $(BUILD_DIR) Kernel.syms openkernel $(VERSION_HEADER)
+	rm -rf $(BUILD_DIR) Kernel.syms openkernel $(VERSION_HEADER) $(BUILDENV_HEADER)
 
 -include $(DEPS)

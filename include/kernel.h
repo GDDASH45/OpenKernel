@@ -84,6 +84,8 @@ static inline __attribute__((noreturn)) void panic_at(
         registers = &captured;
     }
 
+    #ifdef CONFIG_DRM_KERNELPANIC
+
     k_set_quiet(0);
     beep(990, 150); // Why not beep when the kernel panics?
     fb_panic_screen(message);
@@ -120,6 +122,8 @@ static inline __attribute__((noreturn)) void panic_at(
     k_print("\n");
     k_print("END KERNEL PANIC -- ");
     k_print(message);
+
+    #endif
 
     for (;;)
     {
