@@ -2,6 +2,7 @@
 #include <kernel/module.h>
 #include <kernel.h>
 #include <generated/buildenv.h>
+#include <kernel/syskrnl.h>
 
 static int __init syskrnl_init(void)
 {

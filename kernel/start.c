@@ -15,6 +15,7 @@
 #include <kernel/bootopts.h>
 #include <kvideo/fbcon.h>
 #include "../fs/vfs.h"
+#include <kernel/syskrnl.h>
 
 // Fix Undefined errors
 #ifndef NULL
@@ -146,6 +147,8 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr, uint32_t oem)
     k_clear_screen();
 
     k_print("Here we go!\n");
+
+    syskrnl_load();
 
     init_path();
 
