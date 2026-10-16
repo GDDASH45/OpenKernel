@@ -1,0 +1,14 @@
+
+# OpenKernel configuration entry
+CONFIG=CONFIG_KFS
+
+DEFAULT=y
+
+# Source paths are relative to this .Ocfg file's directory.
+SOURCE=block.c
+SOURCE=mount.c
+SOURCE=permission.c
+
+CONFIG=CONFIG_KFS_JOURNAL
+DEFAULT=n
+SOURCE=journal.c

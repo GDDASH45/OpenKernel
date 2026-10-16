@@ -18,3 +18,8 @@ bionicbox/
 
 **/generated/**
 openkernel
+
+.config
+
+scripts/oconf/config-build
+scripts/oconf/config-parser

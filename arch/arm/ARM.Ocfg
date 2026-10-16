@@ -1,0 +1,5 @@
+# OpenKernel ARM architecture configuration
+
+CONFIG=CONFIG_ARCH_ARM
+DEFAULT=n
+SOURCE=boot.s

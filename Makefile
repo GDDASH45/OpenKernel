@@ -30,15 +30,100 @@ MOD_DIR = $(BUILD_DIR)/mod
 MOD_SOURCES = $(wildcard modules/*.c)
 MOD_OBJS = $(patsubst modules/%.c,$(MOD_DIR)/%.mo,$(MOD_SOURCES))
 
-# Find all C and assembly sources.
-C_SOURCES = $(shell find . -name "*.c" \
+# oconf configuration tools.
+OCONF_DIR = scripts/oconf
+OCONF_CONFIG = .config
+OCONF_PARSER = $(OCONF_DIR)/config-parser
+OCONF_BUILDER = $(OCONF_DIR)/config-build
+
+# Compiler flags.
+CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
+	-fno-pie -Iinclude -MMD -MP -DCONFIG_DRM_KERNELPANIC
+
+LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 \
+	-nostdlib -fno-pie -no-pie
+
+PLAIN_LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 \
+	-nostdlib -fno-pie -no-pie -Wl,-e,kernel_main
+
+ASFLAGS = -f elf32
+HOST_CFLAGS = -std=gnu99 -O2 -Wall -Wextra -Iinclude
+OCONF_CFLAGS = -std=c11 -O2 -Wall -Wextra -Werror
+
+# Find every .Ocfg file in the repository.
+OCONF_FILES = $(shell find . -type f -name "*.Ocfg" \
+	-not -path "./.git/*" \
+	-not -path "./$(BUILD_DIR)/*")
+
+# Collect all source paths declared in .Ocfg files.
+OCONF_ALL_SOURCES = $(shell \
+	for cfg in $(OCONF_FILES); do \
+		dir=$$(dirname "$$cfg"); \
+		awk -v dir="$$dir" '\
+			function trim(s) { \
+				sub(/^[ \t]+/, "", s); \
+				sub(/[ \t\r]+$$/, "", s); \
+				return s; \
+			} \
+			{ \
+				line = trim($$0); \
+				if (line == "" || line ~ /^#/) next; \
+				eq = index(line, "="); \
+				if (!eq) next; \
+				key = trim(substr(line, 1, eq - 1)); \
+				value = trim(substr(line, eq + 1)); \
+				if (key == "SOURCE") print dir "/" value; \
+			}' "$$cfg"; \
+	done)
+
+# Collect sources whose active CONFIG symbol is enabled in .config.
+OCONF_ENABLED_SOURCES = $(shell \
+	for cfg in $(OCONF_FILES); do \
+		dir=$$(dirname "$$cfg"); \
+		awk -v dir="$$dir" -v config_file="$(OCONF_CONFIG)" '\
+			function trim(s) { \
+				sub(/^[ \t]+/, "", s); \
+				sub(/[ \t\r]+$$/, "", s); \
+				return s; \
+			} \
+			BEGIN { \
+				while ((getline line < config_file) > 0) { \
+					if (line ~ /^CONFIG_[A-Za-z0-9_]+=y$$/) { \
+						eq = index(line, "="); \
+						enabled[substr(line, 1, eq - 1)] = 1; \
+					} \
+				} \
+				close(config_file); \
+			} \
+			{ \
+				line = trim($$0); \
+				if (line == "" || line ~ /^#/) next; \
+				eq = index(line, "="); \
+				if (!eq) next; \
+				key = trim(substr(line, 1, eq - 1)); \
+				value = trim(substr(line, eq + 1)); \
+				if (key == "CONFIG") config = value; \
+				else if (key == "SOURCE" && enabled[config]) \
+					print dir "/" value; \
+			}' "$$cfg"; \
+	done)
+
+# Find ordinary C sources, excluding sources managed by .Ocfg files.
+ALL_C_SOURCES = $(shell find . -name "*.c" \
 	-not -path "./$(BUILD_DIR)/*" \
 	-not -path "./modules/*" \
 	-not -path "./host/*" \
-	-not -path "./bionicbox/*")
+	-not -path "./bionicbox/*" \
+	-not -path "./scripts/*" \
+	-not -path "./.git/*")
 
+C_SOURCES = $(filter-out $(OCONF_ALL_SOURCES),$(ALL_C_SOURCES)) \
+	$(sort $(OCONF_ENABLED_SOURCES))
+
+# Find assembly sources.
 ASM_SOURCES = $(shell find . -name "*.asm" \
-	-not -path "./$(BUILD_DIR)/*")
+	-not -path "./$(BUILD_DIR)/*" \
+	-not -path "./.git/*")
 
 C_OBJECTS = $(patsubst ./%.c,$(BUILD_DIR)/c/%.o,$(C_SOURCES))
 ASM_OBJECTS = $(patsubst ./%.asm,$(BUILD_DIR)/asm/%.o,$(ASM_SOURCES))
@@ -69,15 +154,16 @@ BUILTIN_ARCHIVES = $(C_BUILTIN_ARCHIVES) $(ASM_BUILTIN_ARCHIVES)
 # Automatic dependency files.
 DEPS = $(C_OBJECTS:.o=.d) $(MOD_OBJS:.mo=.d)
 
-CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-pie -Iinclude -MMD -MP -DCONFIG_DRM_KERNELPANIC
-LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 -nostdlib -fno-pie -no-pie
-PLAIN_LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 -nostdlib -fno-pie -no-pie -Wl,-e,kernel_main
-ASFLAGS = -f elf32
-HOST_CFLAGS = -std=gnu99 -O2 -Wall -Wextra -Iinclude
+.PHONY: all configured-build clean linux run-linux patch_modules \
+	oconf-tools olddefconfig config-build
 
-.PHONY: all clean linux run-linux patch_modules
+# Generate .config first, then restart Make so source lists use it.
+all:
+	@$(MAKE) --no-print-directory olddefconfig
+	@$(MAKE) --no-print-directory configured-build
 
-all: $(VERSION_HEADER) $(OPENKERNEL_A) $(PLAIN_KERNEL) $(KERNEL)
+configured-build: $(VERSION_HEADER) $(BUILDENV_HEADER) \
+	$(OPENKERNEL_A) $(PLAIN_KERNEL) $(KERNEL)
 
 # Generate the kernel version header.
 $(VERSION_HEADER):
@@ -154,7 +240,6 @@ endef
 $(foreach dir,$(ASM_OBJECT_DIRS),$(eval $(call ASM_BUILTIN_RULE,$(dir))))
 
 # Combine all objects into openkernel.a.
-# P preserves object paths inside the archive to avoid duplicate member names.
 $(OPENKERNEL_A): $(PLAIN_OBJECTS) $(BUILTIN_ARCHIVES)
 	@mkdir -p $(dir $@)
 	@rm -f "$@"
@@ -190,13 +275,84 @@ $(LINUX_PROGRAM): $(HOST_SOURCES)
 	@$(HOST_CC) $(HOST_CFLAGS) -o $@ $(HOST_SOURCES)
 
 # Build the ISO.
-os.iso: $(KERNEL) $(shell find initfs -type f) iso/boot/grub/grub.cfg build_fs.sh copy_kernel.sh make_iso.sh
+os.iso: $(KERNEL) $(shell find initfs -type f) \
+	iso/boot/grub/grub.cfg build_fs.sh copy_kernel.sh make_iso.sh
 	@./copy_kernel.sh
 	@./build_fs.sh
 	@./make_iso.sh
 
 run-linux: linux os.iso
 	@./$(LINUX_PROGRAM) $(QEMU_ARGS)
+
+# Build the oconf configuration tools.
+$(OCONF_PARSER): $(OCONF_DIR)/config-parser.c
+	@echo "HOST CC $<"
+	@$(HOST_CC) $(OCONF_CFLAGS) -o $@ $<
+
+$(OCONF_BUILDER): $(OCONF_DIR)/config-build.c
+	@echo "HOST CC $<"
+	@$(HOST_CC) $(OCONF_CFLAGS) -o $@ $<
+
+oconf-tools: $(OCONF_PARSER) $(OCONF_BUILDER)
+
+# Generate configuration defaults from all .Ocfg files.
+# Preserve existing .config values and default new options to n.
+olddefconfig: $(OCONF_PARSER)
+	@set -eu; \
+	tmp_defaults=$$(mktemp); \
+	tmp_unique=$$(mktemp); \
+	trap 'rm -f "$$tmp_defaults" "$$tmp_unique"' EXIT; \
+	find . -type f -name '*.Ocfg' \
+		-not -path './.git/*' \
+		-not -path './$(BUILD_DIR)/*' \
+		-exec awk '\
+			function trim(s) { \
+				sub(/^[ \t]+/, "", s); \
+				sub(/[ \t\r]+$$/, "", s); \
+				return s; \
+			} \
+			function emit() { \
+				if (config != "") \
+					print config "=" default_value; \
+			} \
+			FNR == 1 { \
+				if (NR > 1) emit(); \
+				config = ""; \
+				default_value = "n"; \
+			} \
+			{ \
+				line = trim($$0); \
+				if (line == "" || line ~ /^#/) next; \
+				eq = index(line, "="); \
+				if (!eq) next; \
+				key = trim(substr(line, 1, eq - 1)); \
+				value = trim(substr(line, eq + 1)); \
+				if (key == "CONFIG") { \
+					emit(); \
+					config = value; \
+					default_value = "n"; \
+				} else if (key == "DEFAULT" && config != "") { \
+					if (value == "y" || value == "n") \
+						default_value = value; \
+					else { \
+						printf "oconf: invalid DEFAULT=%s\n", value > "/dev/stderr"; \
+						exit 1; \
+					} \
+				} \
+			} \
+			END { emit(); }' {} + > "$$tmp_defaults"; \
+	awk -F= '!seen[$$1]++' "$$tmp_defaults" > "$$tmp_unique"; \
+	if [ ! -s "$$tmp_unique" ]; then \
+		echo "oconf: no CONFIG entries found in .Ocfg files"; \
+		exit 1; \
+	fi; \
+	echo "OCONF: generating $(OCONF_CONFIG) from .Ocfg files"; \
+	./$(OCONF_PARSER) --olddefconfig \
+		"$(OCONF_CONFIG)" "$$tmp_unique"
+
+# Discover .Ocfg files and compile their enabled source entries.
+config-build: olddefconfig $(OCONF_BUILDER)
+	@./$(OCONF_BUILDER) .
 
 # Report module sources.
 patch_modules:
@@ -210,6 +366,7 @@ patch_modules:
 
 # Remove generated build products.
 clean:
-	rm -rf $(BUILD_DIR) Kernel.syms openkernel $(VERSION_HEADER) $(BUILDENV_HEADER)
+	rm -rf $(BUILD_DIR) Kernel.syms openkernel \
+		$(VERSION_HEADER) $(BUILDENV_HEADER)
 
 -include $(DEPS)
