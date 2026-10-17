@@ -100,8 +100,22 @@ static inline int32_t ok_getpid(void) {
     return ok_syscall3(OK_SYS_GETPID, 0, 0, 0);
 }
 
+static inline int32_t ok_fork(void)
+{
+    return ok_syscall3(OK_SYS_FORK, 0, 0, 0);
+}
+
 static inline int32_t ok_clear(void) {
     return ok_syscall3(OK_SYS_CLEAR, 0, 0, 0);
+}
+
+static inline void ok_panic(void)
+{
+    (void)ok_syscall3(OK_SYS_PANIC, 0, 0, 0);
+
+    for (;;) {
+        __asm__ volatile ("pause");
+    }
 }
 
 static inline int32_t ok_fb_write(uint32_t offset, const void *buffer,

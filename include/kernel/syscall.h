@@ -27,6 +27,8 @@
 #define OK_STDOUT_FILENO 1
 #define OK_STDERR_FILENO 2
 
+#define OK_SYS_PANIC 72
+
 #define OK_SYS_FB_WRITE 12u
 #define OK_SYS_FB_PUT_PIXEL 13u
 #define OK_SYS_FB_CLEAR 14u

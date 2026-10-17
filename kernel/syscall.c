@@ -5,6 +5,7 @@
 #include <kvideo/fb.h>
 #include "../fs/vfs.h"
 #include <write/write.h>
+#include <kernel.h>
 
 #define OK_SYSCALL_WRITE_MAX   4096u
 #define OK_SYSCALL_READDIR_MAX 1024u
@@ -162,6 +163,10 @@ int32_t syscall_dispatch(uint32_t number,
             (char *)(uintptr_t)arg2,
             arg3
         );
+
+    case OK_SYS_PANIC:
+        panic("OpenKernel: panicc syscall invoked");
+        break;
 
     default:
         (void)arg1;

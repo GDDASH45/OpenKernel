@@ -2,6 +2,7 @@
 #include <kernel/tar.h>
 #include <write/write.h>
 #include <driver/keyboard.h>
+#include "proc/proc.h"
 
 #define MAX_VFS_NODES 256
 #define MAX_VFS_MOUNTS 16
@@ -641,4 +642,10 @@ void vfs_init(void) {
     root_node.name[0] = '/';
     root_node.name[1] = '\0';
     mount_essential_folders();
+
+    if (procfs_init() != 0) {
+        k_print("[VFS] Failed to initialize /proc.\n");
+    } else {
+        k_print("[VFS] Mounted /proc.\n");
+    }
 }
