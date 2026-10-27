@@ -6,13 +6,58 @@ static uint32_t next_pid;
 static uint32_t execution_context[6];
 static volatile int execution_context_active;
 
+#define PROCESS_MAX 512
+
+static struct process process_table[PROCESS_MAX];
+static struct process *current_process;
+
 extern int32_t process_context_save(uint32_t *context);
 extern void process_context_restore(uint32_t *context, int32_t status)
     __attribute__((noreturn));
 
+struct process *process_find(uint32_t pid) {
+    for (uint32_t i = 0; i < PROCESS_MAX; i++) {
+        if (process_table[i].state != PROCESS_STATE_UNUSED &&
+            process_table[i].pid == pid) {
+            return &process_table[i];
+        }
+    }
+
+    return 0;
+}
+
+struct process *process_alloc(void) {
+    for (uint32_t i = 1; i < PROCESS_MAX; i++) {
+        if (process_table[i].state == PROCESS_STATE_UNUSED) {
+            return &process_table[i];
+        }
+    }
+
+    return 0;
+}
+
 void process_system_init(void) {
     current_pid = 0;
     next_pid = 1;
+    current_process = &process_table[0];
+
+    for (uint32_t i = 0; i < PROCESS_MAX; i++) {
+        process_table[i].pid = 0;
+        process_table[i].parent_pid = 0;
+        process_table[i].state = PROCESS_STATE_UNUSED;
+        process_table[i].exit_status = 0;
+        process_table[i].kernel_stack = 0;
+        process_table[i].kernel_stack_size = 0;
+
+        for (uint32_t j = 0; j < 6; j++) {
+            process_table[i].context[j] = 0;
+        }
+
+        process_table[i].next = 0;
+    }
+
+    process_table[0].pid = 0;
+    process_table[0].state = PROCESS_STATE_RUNNING;
 }
 
 uint32_t process_current_pid(void) {
