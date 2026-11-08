@@ -1,5 +1,6 @@
 #include <kvideo/fb.h>
 #include <kvideo/font8x10.h>
+#include <write/write.h>
 
 #define VGA_GFX_MEM 0xA0000
 #define SCREEN_WIDTH 320
@@ -21,6 +22,7 @@ static uint8_t blue_mask;
 static inline void outb(uint16_t port, uint8_t val) {
     __asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
 }
+
 
 void set_mode_13h(void) {
     // Standard VGA Mode 13h sequence using CRT controller and misc registers
@@ -87,12 +89,13 @@ int fb_init(const struct multiboot_info *mbi) {
     blue_position = mbi->framebuffer_blue_field_position;
     blue_mask = mbi->framebuffer_blue_mask_size;
 
-    if (red_mask == 0 && green_mask == 0 && blue_mask == 0 &&
-        framebuffer_bpp >= 24) {
+    if (red_mask == 0 || green_mask == 0 || blue_mask == 0) {
         red_position = 16;
         red_mask = 8;
+
         green_position = 8;
         green_mask = 8;
+
         blue_position = 0;
         blue_mask = 8;
     }
