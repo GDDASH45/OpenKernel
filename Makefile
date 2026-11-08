@@ -168,7 +168,7 @@ version:
 	@echo "$(VERSION)"
 
 configured-build: $(VERSION_HEADER) $(BUILDENV_HEADER) \
-	$(OPENKERNEL_A) $(PLAIN_KERNEL) $(KERNEL)
+	$(OPENKERNEL_A) $(PLAIN_KERNEL) $(KERNEL) modules
 
 # Generate the kernel version header.
 $(VERSION_HEADER):
