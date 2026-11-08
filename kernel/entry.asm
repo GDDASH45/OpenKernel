@@ -17,9 +17,10 @@ multiboot_header:
 section .text
 
 global _start
+global kernel_loader_jump
 global stack_bottom
 global stack_top
-extern kernel_main
+extern kernel_loader_main
 
 _start:
     cli
@@ -35,17 +36,24 @@ _start:
     ;
     mov ecx, 0
 
-    ; kernel_main(eax, ebx, ecx)
+    ; kernel_loader_main(eax, ebx, ecx)
     push ecx
     push ebx
     push eax
 
-    call kernel_main
+    call kernel_loader_main
 
 .hang:
     cli
     hlt
     jmp .hang
+
+kernel_loader_jump:
+    mov edx, [esp + 4]
+    mov eax, [esp + 8]
+    mov ebx, [esp + 12]
+    mov ecx, [esp + 16]
+    jmp edx
 
 section .bss
 

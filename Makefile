@@ -14,10 +14,13 @@ PRETTY_NAME := Cyber Diva
 
 BUILD_DIR = build
 KERNEL = $(BUILD_DIR)/kernel.bin
-PLAIN_KERNEL = ./openkernel
+PLAIN_KERNEL = $(BUILD_DIR)/openkernel.elf.gz
+PLAIN_KERNEL_ELF = $(BUILD_DIR)/openkernel.elf
 OPENKERNEL_A = $(BUILD_DIR)/openkernel.a
 LINUX_PROGRAM ?= $(BUILD_DIR)/openkernel
 HOST_SOURCES = host/main.c
+LOADER_OBJECT = $(BUILD_DIR)/c/loader/loader.o
+KERNEL_PAYLOAD_OBJECT = $(BUILD_DIR)/kernel_payload.o
 
 BUILD_NUMBER_FILE = .build_number
 
@@ -45,8 +48,8 @@ CFLAGS = -m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
 LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 \
 	-nostdlib -fno-pie -no-pie
 
-PLAIN_LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 \
-	-nostdlib -fno-pie -no-pie -Wl,-e,kernel_main
+PLAIN_LDFLAGS = -m32 -T linker_plain.ld -ffreestanding -O2 \
+	-nostdlib -fno-pie -no-pie -Wl,-e,_start
 
 ASFLAGS = -f elf32
 HOST_CFLAGS = -std=gnu99 -O2 -Wall -Wextra -Iinclude
@@ -113,6 +116,7 @@ OCONF_ENABLED_SOURCES = $(shell \
 # Find ordinary C sources, excluding sources managed by .Ocfg files.
 ALL_C_SOURCES = $(shell find . -name "*.c" \
 	-not -path "./$(BUILD_DIR)/*" \
+	-not -path "./loader/*" \
 	-not -path "./modules/*" \
 	-not -path "./host/*" \
 	-not -path "./bionicbox/*" \
@@ -259,19 +263,41 @@ $(OPENKERNEL_A): $(PLAIN_OBJECTS) $(BUILTIN_ARCHIVES)
 	@$(AR) rcsP "$@" $(PLAIN_OBJECTS)
 	@$(RANLIB) "$@"
 
-# Build the plain kernel image.
-$(PLAIN_KERNEL): $(OPENKERNEL_A) linker.ld
+# Build the plain kernel ELF at an address separate from the loader.
+$(PLAIN_KERNEL_ELF): $(OPENKERNEL_A) linker_plain.ld
 	@echo "LD $@"
-	@$(CC) $(PLAIN_LDFLAGS) -o "$@" $(OPENKERNEL_A)
+	@$(CC) $(PLAIN_LDFLAGS) -o "$@" $(PLAIN_OBJECTS) -lgcc
 	@test -f "$@"
 
-# Build the bootable Multiboot kernel image.
-$(KERNEL): $(ENTRY_OBJ) $(OPENKERNEL_A) linker.ld
+# Compress the plain kernel for the Multiboot loader.
+$(PLAIN_KERNEL): $(PLAIN_KERNEL_ELF)
+	@echo "GZIP $@"
+	@set -eu; tmp="$@.tmp"; \
+	trap 'rm -f "$$tmp"' EXIT; \
+	gzip -n -9 -c "$<" > "$$tmp"; \
+	mv "$$tmp" "$@"
+
+# Embed the compressed kernel as read-only data in the loader.
+$(KERNEL_PAYLOAD_OBJECT): $(PLAIN_KERNEL)
+	@mkdir -p $(dir $@)
+	@echo "OBJCOPY $@"
+	@cd "$(BUILD_DIR)" && objcopy -I binary -O elf32-i386 -B i386 \
+		--rename-section .data=.rodata,alloc,load,readonly,data,contents \
+		openkernel.elf.gz kernel_payload.o
+
+$(LOADER_OBJECT): loader/loader.c
+	@mkdir -p $(dir $@)
+	@echo "CC $@"
+	@$(CC) $(CFLAGS) -fno-builtin -c "$<" -o "$@"
+
+# Build the uncompressed Multiboot loader with the compressed kernel payload.
+$(KERNEL): $(ENTRY_OBJ) $(LOADER_OBJECT) $(KERNEL_PAYLOAD_OBJECT) linker.ld
 	@mkdir -p $(dir $@)
 	@echo "LD $@"
-	@$(CC) $(LDFLAGS) -o "$@" $(ENTRY_OBJ) $(OPENKERNEL_A)
+	@$(CC) $(LDFLAGS) -o "$@" $(ENTRY_OBJ) $(LOADER_OBJECT) \
+		$(KERNEL_PAYLOAD_OBJECT) -lgcc
 	@test -f "$@"
-	@nm -n $(KERNEL) > Kernel.syms
+	@nm -n $(PLAIN_KERNEL_ELF) > Kernel.syms
 	@if [ ! -f "$(BUILD_NUMBER_FILE)" ]; then echo 0 > "$(BUILD_NUMBER_FILE)"; fi
 	@build=$$(cat "$(BUILD_NUMBER_FILE)"); \
 	build=$$((build + 1)); \
@@ -294,7 +320,7 @@ os.iso: $(shell find initramfs -type f) \
 	@mkdir -p iso/boot/grub
 	@cp boot/grub.cfg iso/boot/grub/grub.cfg
 	@./copy_kernel.sh
-	@./build_fs.sh "$(VERSION)"
+	@./build_fs.sh
 	@./make_iso.sh
 
 run-linux:

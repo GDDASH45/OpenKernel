@@ -4,9 +4,10 @@
 
 The normal kernel build targets 32-bit x86 and uses GCC-compatible compiler
 support for `-m32`, GNU binutils, and NASM. Building an ISO and running it also
-requires GRUB tooling, ISO creation utilities, and QEMU. Package names differ
-by distribution; on Debian/Ubuntu, the common packages include `build-essential`,
-`nasm`, `qemu-system-x86`, `grub-pc-bin`, `xorriso`, and `mtools`.
+requires gzip, GRUB tooling, ISO creation utilities, and QEMU. Package names
+differ by distribution; on Debian/Ubuntu, the common packages include
+`build-essential`, `gzip`, `nasm`, `qemu-system-x86`, `grub-pc-bin`, `xorriso`,
+and `mtools`.
 
 ## Build the kernel
 
@@ -16,7 +17,9 @@ From the repository root:
 make -j"$(nproc)"
 ```
 
-The default output is `build/kernel.bin`. `make linux` additionally builds
+The default output is `build/kernel.bin`, an uncompressed Multiboot loader with
+the gzip-compressed kernel ELF embedded in it. The standalone compressed ELF
+is `build/openkernel.elf.gz`. `make linux` additionally builds
 `build/openkernel`, a small Linux launcher that starts QEMU; it is not a
 hosted implementation of OpenKernel's kernel or shell.
 
