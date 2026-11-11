@@ -1,7 +1,7 @@
 # VFS and storage
 
 OpenKernel currently has two distinct storage mechanisms: an in-memory VFS
-namespace and an ATA-backed OKFS flat-file store. They are not joined by a
+namespace and an ATA-backed OKFS2 flat-file store. They are not joined by a
 mount that makes persistent files visible under VFS paths.
 
 ## VFS namespace
@@ -37,9 +37,9 @@ descriptor: the current syscall ABI has no `open`, `read`, or `close`
 interface for arbitrary VFS files. `ok_device_read()` and
 `ok_device_write()` access a path directly.
 
-## OKFS persistent store
+## OKFS2 persistent store
 
-OKFS uses ATA PIO reads and writes at fixed LBAs and maintains a fixed-size
+OKFS2 uses ATA PIO reads and writes at fixed LBAs and maintains a fixed-size
 flat directory. It can store up to 64 entries, with names limited to 47 bytes
 plus terminator and a maximum file size of 64 KiB. `okfs_read()` and
 `okfs_write()` operate on absolute-looking flat names; directories and
@@ -47,10 +47,13 @@ hierarchical lookup are not implemented.
 
 On mount, a missing or invalid superblock signature causes the region to be
 formatted. Startup attempts to unpack regular files from the initramfs into
-OKFS and writes a few system files. The unpacker skips boot paths and does not
+OKFS2 and writes a few system files. The unpacker skips boot paths and does not
 create directories. There is currently no delete, rename, free-space
 management, robust disk-capacity validation, or VFS mount integration. Do not
-assume data can be listed from the shell merely because OKFS accepted a write.
+assume data can be listed from the shell merely because OKFS2 accepted a
+write.
 
-# OKFS1
-OKFS1 is now deprecated and was removed in OpenKernel 0.2.0-rc3
+# OKFS2
+The legacy OKFS1 filesystem was removed in OpenKernel 0.2.0-rc3 and is not
+part of the current boot or storage documentation. Current references and
+startup behavior target the OKFS2 persistent store described above.

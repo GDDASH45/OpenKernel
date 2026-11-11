@@ -36,4 +36,4 @@ program execution accepts a limited number of whitespace-separated arguments.
 `exit` intentionally refuses to exit PID 1. Keyboard input is translated by
 the PS/2 driver; see [Display and input](../kernel/display-input.md). Directory
 listing depends on the VFS tree and does not expose the separate persistent
-OKFS store; see [VFS and storage](../kernel/storage.md).
+OKFS2 store; see [VFS and storage](../kernel/storage.md).

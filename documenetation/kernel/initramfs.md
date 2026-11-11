@@ -7,7 +7,7 @@ tracked `initramfs/` template and separately built module images. GRUB supplies
 that archive as a Multiboot module. The default init entry, `sys/init`, is a
 text startup script; this repository does not include a userspace shell.
 
-At startup, TAR entries are indexed into the VFS tree. If ATA-backed OKFS
+At startup, TAR entries are indexed into the VFS tree. If ATA-backed OKFS2
 mounts successfully, regular files are also copied into that separate store.
 The configured init is then looked up in the archive and run directly from
 there. See [Boot and startup](boot.md) and [VFS and storage](storage.md).

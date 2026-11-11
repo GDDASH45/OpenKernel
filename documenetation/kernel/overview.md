@@ -36,6 +36,6 @@ the kernel.
 
 Several interfaces are intentionally partial or dormant: desktop routines are
 not invoked by normal boot, mouse input has no userspace syscall, module
-dependencies are not resolved, and the persistent OKFS store is not mounted
+dependencies are not resolved, and the persistent OKFS2 store is not mounted
 into the VFS namespace. See the linked subsystem pages for specific behavior
 and caveats.

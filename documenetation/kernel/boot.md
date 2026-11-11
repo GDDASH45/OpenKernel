@@ -28,7 +28,7 @@ At a high level, startup:
 6. Initializes the Multiboot framebuffer when available; attempts mouse setup.
 7. Obtains the first GRUB module as the initramfs, indexes its TAR paths, and
    inserts supported ELF32 modules from `/lib/modules/`.
-8. Mounts/formats OKFS when ATA storage is available and attempts to unpack
+8. Mounts/formats OKFS2 when ATA storage is available and attempts to unpack
    regular archive files.
 9. Registers the initramfs base for program loading, initializes sound and
    other startup components, then executes the configured init entry.
