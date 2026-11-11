@@ -51,3 +51,6 @@ OKFS and writes a few system files. The unpacker skips boot paths and does not
 create directories. There is currently no delete, rename, free-space
 management, robust disk-capacity validation, or VFS mount integration. Do not
 assume data can be listed from the shell merely because OKFS accepted a write.
+
+# OKFS1
+OKFS1 is now deprecated and was removed in OpenKernel 0.2.0-rc3
