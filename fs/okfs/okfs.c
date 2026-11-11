@@ -1,7 +1,9 @@
 #include <kernel/ata.h>
-#include <kernel/okfs.h>
+#include <fs/okfs/okfs.h>
 #include <kernel/tar.h>
 #include <fs/okfs/access.h>
+#include <fs/okfs/fileops.h>
+#include <fs/okfs/okfs2.h>
 
 struct okfs_superblock {
     char magic[OKFS_MAGIC_SIZE];
@@ -9,10 +11,11 @@ struct okfs_superblock {
     uint32_t directory_lba;
     uint32_t data_lba;
     uint32_t max_files;
-    uint32_t reserved[123];
+    uint32_t reserved[122];
 } __attribute__((packed));
 
 static int mounted;
+static int mounted_format;
 
 static int text_equal(const char *left, const char *right) {
     while (*left != '\0' && *left == *right) {
@@ -70,58 +73,105 @@ static uint32_t next_data_lba(const struct okfs_entry *entries) {
     return next;
 }
 
-static int format_filesystem(void) {
+int okfs_mount(void) {
     struct okfs_superblock superblock;
-    struct okfs_entry entries[OKFS_MAX_FILES];
+    uint16_t sector[256];
+    const uint8_t *bytes = (const uint8_t *)sector;
+    int blank = 1;
 
-    for (uint32_t byte = 0; byte < sizeof(superblock); byte++) {
-        ((uint8_t *)&superblock)[byte] = 0;
-    }
+    mounted = 0;
+    mounted_format = 0;
 
-    for (uint32_t byte = 0; byte < OKFS_MAGIC_SIZE; byte++) {
-        superblock.magic[byte] = OKFS_MAGIC[byte];
-    }
-
-    superblock.version = 1;
-    superblock.directory_lba = OKFS_DIRECTORY_LBA;
-    superblock.data_lba = OKFS_DATA_LBA;
-    superblock.max_files = OKFS_MAX_FILES;
-
-    for (uint32_t byte = 0; byte < sizeof(entries); byte++) {
-        ((uint8_t *)entries)[byte] = 0;
-    }
-
-    if (ata_write_sector(OKFS_SUPER_LBA, &superblock) != 0) {
+    if (ata_read_sector(OKFS_SUPER_LBA, sector) != 0) {
         return -1;
     }
 
-    return save_directory(entries);
-}
-
-int okfs_mount(void) {
-    struct okfs_superblock superblock;
-
-    mounted = 0;
-
-    if (ata_read_sector(OKFS_SUPER_LBA, &superblock) != 0 ||
-        !text_equal(superblock.magic, OKFS_MAGIC)) {
-        if (format_filesystem() != 0) {
-            return -1;
+    for (uint32_t index = 0; index < 512; index++) {
+        if (bytes[index] != 0) {
+            blank = 0;
+            break;
         }
     }
 
-    mounted = 1;
-    return 0;
+    if (blank) {
+        if (okfs2_format() != 0) {
+            return -1;
+        }
+        mounted = 1;
+        mounted_format = 2;
+        return 0;
+    }
+
+    for (uint32_t index = 0; index < sizeof(superblock); index++) {
+        ((uint8_t *)&superblock)[index] = 0;
+    }
+    for (uint32_t index = 0; index < 512; index++) {
+        ((uint8_t *)&superblock)[index] = bytes[index];
+    }
+
+    if (text_equal(superblock.magic, OKFS_MAGIC) &&
+        superblock.version == 1 &&
+        superblock.directory_lba == OKFS_DIRECTORY_LBA &&
+        superblock.data_lba == OKFS_DATA_LBA &&
+        superblock.max_files == OKFS_MAX_FILES) {
+        mounted = 1;
+        mounted_format = 1;
+        return 0;
+    }
+
+    if (text_equal(superblock.magic, "OKFS002") &&
+        okfs2_mount() == 0) {
+        mounted = 1;
+        mounted_format = 2;
+        return 0;
+    }
+
+    return -1;
+}
+
+int okfs_create(const char *path, uint32_t mode) {
+    if (!mounted || mounted_format != 2) {
+        return -1;
+    }
+    return okfs_fileops_create(path, mode);
+}
+
+int okfs_mkdir(const char *path, uint32_t mode) {
+    if (!mounted || mounted_format != 2) {
+        return -1;
+    }
+    return okfs_fileops_mkdir(path, mode);
+}
+
+int okfs_chmod(const char *path, uint32_t mode) {
+    if (!mounted || mounted_format != 2) {
+        return -1;
+    }
+    return okfs_fileops_chmod(path, mode);
+}
+
+int okfs_stat(const char *path, struct okfs_stat *stat) {
+    if (!mounted || mounted_format != 2) {
+        return -1;
+    }
+    return okfs_fileops_stat(path, stat);
 }
 
 int okfs_read(const char *path, void *buffer, uint32_t capacity) {
+    if (!mounted) {
+        return -1;
+    }
+    if (mounted_format == 2) {
+        return okfs_fileops_read(path, buffer, capacity);
+    }
+
     struct okfs_entry entries[OKFS_MAX_FILES];
     uint16_t sector[256];
     uint8_t *destination = (uint8_t *)buffer;
     int entry_index;
     uint32_t copied = 0;
 
-    if (!mounted || !okfs_valid_path(path) || buffer == 0 ||
+    if (!okfs_valid_path(path) || buffer == 0 ||
         load_directory(entries) != 0) {
         return -1;
     }
@@ -160,13 +210,20 @@ int okfs_read(const char *path, void *buffer, uint32_t capacity) {
 }
 
 int okfs_write(const char *path, const void *data, uint32_t size) {
+    if (!mounted) {
+        return -1;
+    }
+    if (mounted_format == 2) {
+        return okfs_fileops_write(path, data, size);
+    }
+
     struct okfs_entry entries[OKFS_MAX_FILES];
     uint16_t sector[256];
     const uint8_t *source = (const uint8_t *)data;
     int entry_index;
     uint32_t sectors;
 
-    if (!mounted || !okfs_valid_path(path) || data == 0 ||
+    if (!okfs_valid_path(path) || data == 0 ||
         size > 512 * 128 || load_directory(entries) != 0) {
         return -1;
     }
@@ -236,6 +293,13 @@ static uint32_t tar_size(const char *field) {
 }
 
 int okfs_unpack_tar(uint32_t tar_address) {
+    if (!mounted) {
+        return -1;
+    }
+    if (mounted_format == 2) {
+        return okfs_fileops_unpack_tar(tar_address);
+    }
+
     struct tar_header *header =
         (struct tar_header *)(uintptr_t)tar_address;
 
@@ -286,5 +350,6 @@ int okfs_unpack_tar(uint32_t tar_address) {
         header = (struct tar_header *)(uintptr_t)tar_address;
     }
 
+    mounted = 1;
     return (int)unpacked;
 }

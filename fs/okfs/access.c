@@ -1,5 +1,5 @@
 #include <fs/okfs/access.h>
-#include <kernel/okfs.h>
+#include <fs/okfs/okfs.h>
 
 int okfs_valid_path(const char *path) {
     if (path == 0 || path[0] != '/' || path[1] == '\0') {

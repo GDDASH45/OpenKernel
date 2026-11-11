@@ -39,19 +39,26 @@ interface for arbitrary VFS files. `ok_device_read()` and
 
 ## OKFS2 persistent store
 
-OKFS2 uses ATA PIO reads and writes at fixed LBAs and maintains a fixed-size
-flat directory. It can store up to 64 entries, with names limited to 47 bytes
-plus terminator and a maximum file size of 64 KiB. `okfs_read()` and
-`okfs_write()` operate on absolute-looking flat names; directories and
-hierarchical lookup are not implemented.
+OKFS2 uses ATA PIO and a linked inode table with parent-directory identifiers,
+so `okfs_read()` and `okfs_write()` accept hierarchical absolute paths. The
+number of files and directories is not fixed at 64; entries grow until the
+addressable disk space is exhausted. File mode bits are stored and can be
+queried or changed, but are not yet enforced. Rewrites append new data rather
+than reclaiming the previous allocation, so repeated writes can exhaust disk
+space.
 
-On mount, a missing or invalid superblock signature causes the region to be
-formatted. Startup attempts to unpack regular files from the initramfs into
-OKFS2 and writes a few system files. The unpacker skips boot paths and does not
-create directories. There is currently no delete, rename, free-space
-management, robust disk-capacity validation, or VFS mount integration. Do not
-assume data can be listed from the shell merely because OKFS2 accepted a
-write.
+On a blank disk, startup formats OKFS2. A disk with the legacy flat OKFS
+signature remains readable and writable through the legacy operations, but
+hierarchical operations are only available on OKFS2. Startup attempts to
+unpack regular files and directories from the initramfs, skipping boot paths,
+then writes a few system files. There is currently no delete, rename,
+free-space reclamation, reliable disk-capacity detection, or VFS mount
+integration. Do not assume data can be listed from the shell merely because
+OKFS2 accepted a write.
+
+The implementation is split between the on-disk backend in `fs/okfs/okfs2.c`,
+file and path operations in `fs/okfs/fileops.c`, and initramfs extraction in
+`fs/okfs/tar_unpack.c`. OKFS headers are in `include/fs/okfs/`.
 
 # OKFS2
 The legacy OKFS1 filesystem was removed in OpenKernel 0.2.0-rc3 and is not

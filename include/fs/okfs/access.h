@@ -1,6 +1,7 @@
 #ifndef _INCLUDE_FS_OKFS_ACCESS_H
 #define _INCLUDE_FS_OKFS_ACCESS_H
 
+#include <fs/okfs/okfs.h>
 #include <stdint.h>
 
 struct okfs_entry;

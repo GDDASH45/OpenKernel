@@ -12,7 +12,7 @@
 #include <assert.h>
 #include <init/path.h>
 #include <kernel/desktop.h>
-#include <kernel/okfs.h>
+#include <fs/okfs/okfs.h>
 #include <kernel/bootopts.h>
 #include <kernel/acpi.h>
 #include <kvideo/fbcon.h>
