@@ -34,3 +34,8 @@ assuming conventional operating-system behavior.
 - [Metadata, assertions, and warnings](kernel/metadata-assertions.md)
 - [Kernel module status](kernel/modules.md)
 - [sleep_ms reference](time/sleep_ms.md)
+
+## Kernel Libraries
+
+- [String Library](lib/string.md)
+- [Bitmap Operations](lib/bitops.md)
