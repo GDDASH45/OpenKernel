@@ -106,13 +106,13 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr, uint32_t oem)
         if (vfs_create_device("/device/net0", VFS_DEVICE_NETWORK) != 0) {
             k_print("[NET] Could not create /device/net0.\n");
         } else {
-            k_print("[NET] Intel e1000 online at /device/net0 (10.0.2.15).\n");
+            k_print("[NET] Network adapter online at /device/net0 (10.0.2.15).\n");
         }
     } else {
         if (vfs_create_device("/device/net0", VFS_DEVICE_NETWORK) != 0) {
             k_print("[NET] Could not create /device/net0.\n");
         }
-        k_print("[NET] Supported Intel e1000 adapter not found.\n");
+        k_print("[NET] Supported network adapter not found.\n");
     }
 
     if (fb_init(mbi) != 0) {

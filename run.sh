@@ -1,1 +1,1 @@
-qemu-system-x86_64 -audiodev sdl,id=snd0 -machine pcspk-audiodev=snd0 -cdrom os.iso
+qemu-system-x86_64 -audiodev sdl,id=snd0 -machine pcspk-audiodev=snd0 -nic user,model=virtio-net-pci -cdrom os.iso

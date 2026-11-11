@@ -17,6 +17,8 @@ context save/restore.
   a separate ATA-backed flat-file store ([VFS and storage](storage.md)).
 - **System calls:** a 32-bit `int $0x80` interface for console I/O, processes,
   devices, directory listing, and framebuffer drawing ([System calls](syscalls.md)).
+- **Networking:** polled Ethernet, ARP, IPv4, ICMP echo, and UDP over legacy
+  VirtIO-net PCI (preferred) or Intel e1000.
 - **Programs and process execution:** flat/ELF loaders, cooperative scheduling,
   and stack-cloning `fork()` ([Programs and processes](processes.md)).
 - **Display and input:** Multiboot linear framebuffer, PS/2 keyboard and mouse,

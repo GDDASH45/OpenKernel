@@ -1,5 +1,6 @@
 #include <driver/net.h>
 #include "e1000.h"
+#include "virtio/virtio_net.h"
 
 #define ETHERNET_HEADER_SIZE 14u
 #define IPV4_HEADER_SIZE 20u
@@ -41,6 +42,17 @@ static uint32_t udp_next;
 static uint32_t raw_head;
 static uint32_t raw_count;
 static int device_ready;
+static int using_virtio;
+
+static int send_frame(const void *frame, uint16_t length) {
+	return using_virtio ? virtio_net_send(frame, length)
+						: e1000_send(frame, length);
+}
+
+static int receive_frame(void *frame, uint16_t capacity) {
+	return using_virtio ? virtio_net_receive(frame, capacity)
+						: e1000_receive(frame, capacity);
+}
 
 static uint16_t read_be16(const uint8_t *data) {
 	return (uint16_t)(((uint16_t)data[0] << 8) | data[1]);
@@ -141,7 +153,7 @@ static int transmit_arp_request(uint32_t address) {
 	}
 	write_be32(frame + 28, IPV4_ADDRESS);
 	write_be32(frame + 38, address);
-	return e1000_send(frame, sizeof(frame)) < 0 ? -1 : 0;
+	return send_frame(frame, sizeof(frame)) < 0 ? -1 : 0;
 }
 
 static int resolve_arp(uint32_t address, uint8_t mac[6]) {
@@ -180,7 +192,7 @@ static void send_arp_reply(const uint8_t *request, const uint8_t destination[6],
 	write_be32(frame + 28, IPV4_ADDRESS);
 	write_be32(frame + 38, destination_ip);
 	(void)request;
-	(void)e1000_send(frame, sizeof(frame));
+	(void)send_frame(frame, sizeof(frame));
 }
 
 static void handle_arp(const uint8_t *frame, uint16_t length) {
@@ -234,7 +246,7 @@ static void send_ipv4_packet(const uint8_t destination_mac[6],
 	for (uint32_t index = 0; index < payload_length; index++) {
 		ip[IPV4_HEADER_SIZE + index] = payload[index];
 	}
-	(void)e1000_send(frame, ETHERNET_HEADER_SIZE + ip_length);
+	(void)send_frame(frame, ETHERNET_HEADER_SIZE + ip_length);
 }
 
 static void handle_icmp(const uint8_t *frame, uint16_t length,
@@ -349,7 +361,7 @@ void net_poll(void) {
 	if (!device_ready) {
 		return;
 	}
-	while ((length = e1000_receive(frame, sizeof(frame))) > 0) {
+	while ((length = receive_frame(frame, sizeof(frame))) > 0) {
 		uint32_t tail;
 		struct raw_entry *entry;
 
@@ -372,7 +384,11 @@ int net_init(void) {
 	if (device_ready) {
 		return 0;
 	}
-	if (e1000_init(local_mac) != 0) {
+	if (virtio_net_init(local_mac) == 0) {
+		using_virtio = 1;
+	} else if (e1000_init(local_mac) == 0) {
+		using_virtio = 0;
+	} else {
 		return -1;
 	}
 	device_ready = 1;
@@ -407,10 +423,10 @@ int net_device_read(char *buffer, uint32_t size) {
 
 int net_device_write(const char *buffer, uint32_t size) {
 	if (!device_ready || (buffer == 0 && size != 0) ||
-		size > E1000_FRAME_MAX || size < ETHERNET_HEADER_SIZE) {
+		size > NET_FRAME_MAX || size < ETHERNET_HEADER_SIZE) {
 		return -1;
 	}
-	return e1000_send(buffer, (uint16_t)size);
+	return send_frame(buffer, (uint16_t)size);
 }
 
 int net_udp_send(uint32_t destination_ipv4, uint16_t source_port,
