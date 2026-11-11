@@ -39,3 +39,4 @@ assuming conventional operating-system behavior.
 
 - [String Library](lib/string.md)
 - [Bitmap Operations](lib/bitops.md)
+- [Ctype Library](lib/ctype.md)
