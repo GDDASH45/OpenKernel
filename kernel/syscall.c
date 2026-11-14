@@ -10,6 +10,7 @@
 #include <kernel/module.h>
 #include <kernel/vdso.h>
 #include <kernel/acpi.h>
+#include <fs/okfs/okfs.h>
 
 #define OK_SYSCALL_WRITE_MAX   4096u
 #define OK_SYSCALL_READDIR_MAX 1024u
@@ -257,6 +258,18 @@ int32_t syscall_dispatch(uint32_t number,
     case OK_SYS_REBOOT:
         acpi_reboot();
         return 0;
+
+    case OK_SYS_FILE_READ: {
+        int result;
+
+        if (arg1 == 0 || arg2 == 0) {
+            return -OK_EFAULT;
+        }
+        result = okfs_read((const char *)(uintptr_t)arg1,
+                           (void *)(uintptr_t)arg2, arg3);
+        return result == -2 ? -22 :
+               result < 0 ? -OK_EIO : result;
+    }
 
     case OK_SYS_PANIC:
         panic("OpenKernel: panicc syscall invoked");

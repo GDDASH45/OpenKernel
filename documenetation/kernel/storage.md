@@ -47,6 +47,12 @@ queried or changed, but are not yet enforced. Rewrites append new data rather
 than reclaiming the previous allocation, so repeated writes can exhaust disk
 space.
 
+Userspace can load a complete persistent file into a caller-provided buffer
+with `ok_file_read(path, buffer, capacity)`. The capacity must be at least the
+file size; the call returns the number of bytes read, `-22` when the buffer is
+too small, and a negative error for other failures. This direct read interface
+does not mount OKFS files into the VFS namespace.
+
 On a blank disk, startup formats OKFS2. A disk with the legacy flat OKFS
 signature remains readable and writable through the legacy operations, but
 hierarchical operations are only available on OKFS2. Startup attempts to

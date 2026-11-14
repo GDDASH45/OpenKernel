@@ -22,6 +22,7 @@ errors. Programs are compiled for 32-bit x86.
 | Clear text/console | `ok_clear()` | Clears the kernel console display. |
 | Create device node | `ok_mkdev(path, type)` | Creates one of the supported device types. |
 | List directory | `ok_listdir(path, buf, capacity)` | Newline-separated names; kernel maximum is 1024 bytes. |
+| Read persistent file | `ok_file_read(path, buf, capacity)` | Loads an entire file from the ATA-backed OKFS store into the supplied buffer; returns bytes read, `-22` if capacity is too small, or a negative error. |
 | Load OSO | `ok_load_oso(path)` | Loads a fixed-address OSO image; see [Programs and processes](processes.md). |
 | Insert/remove kernel module | `ok_module_load(path)`, `ok_module_unload(name)` | Loads an i386 ELF relocatable `.ko` from the initramfs or removes an inserted module. Modules execute at kernel privilege. |
 | Shared syscall ABI | `ok_vdso_get()` | Returns the versioned shared ABI page. Its syscall trampoline uses `int 0x80`; `ok_getpid()` reads the current PID directly from the page. |

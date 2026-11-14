@@ -211,6 +211,15 @@ static inline int32_t ok_device_write(const char *path, const void *buffer,
 					   (uint32_t)(uintptr_t)buffer, size);
 }
 
+static inline int32_t ok_file_read(const char *path, void *buffer,
+                                   uint32_t capacity) {
+    if (path == 0 || buffer == 0) {
+        return -OK_EFAULT;
+    }
+    return ok_syscall3(OK_SYS_FILE_READ, (uint32_t)(uintptr_t)path,
+                       (uint32_t)(uintptr_t)buffer, capacity);
+}
+
 static inline uint32_t ok_net_get_ipv4(void) {
 	return (uint32_t)ok_syscall3(OK_SYS_NET_GET_IPV4, 0, 0, 0);
 }
