@@ -304,7 +304,7 @@ $(PLAIN_KERNEL_ELF): $(OPENKERNEL_A) linker_plain.ld
 	@if find "$@" -size +2M -print -quit | grep -q .; then echo "Kernel ELF exceeds loader decompression buffer (2 MiB)"; exit 1; fi
 	@echo "KASLR RELOCS $@"
 	@readelf -SW "$@" | grep -q "\\.rel\\." || { echo "KASLR requires retained ELF relocation sections"; exit 1; }
-	@readelf -rW "$@" | awk '$3 ~ /^R_386_/ && $3 != "R_386_NONE" && $3 != "R_386_32" && $3 != "R_386_PC32" && $3 != "R_386_PLT32" { print "Unsupported KASLR relocation: " $3 > "/dev/stderr"; bad = 1 } END { exit bad }'
+	@if readelf -rW "$@" | grep -E "R_386_" | grep -Ev "R_386_(NONE|32|PC32|PLT32)" >/dev/null; then echo "Unsupported KASLR relocation found"; exit 1; fi
 
 # Compress the plain kernel for the Multiboot loader.
 $(PLAIN_KERNEL): $(PLAIN_KERNEL_ELF)
