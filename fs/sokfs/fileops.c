@@ -21,7 +21,7 @@ static int read_directory(uint32_t inode_number, struct sokfs_inode *inode,
     uint8_t sector[SOKFS_SECTOR_SIZE];
     if (sokfs_internal_read_inode(inode_number, inode) != 0 ||
         inode->type != SOKFS_TYPE_DIRECTORY ||
-        inode->start_sector == 0 ||
+        inode->sector_count != 1 ||
         ata_read_sector(sokfs_internal_volume_start() + inode->start_sector,
                         sector) != 0)
         return -1;
