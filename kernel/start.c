@@ -18,6 +18,7 @@
 #include <kvideo/fbcon.h>
 #include "../fs/vfs.h"
 #include <memory/page.h>
+#include <memory/vmm.h>
 #include <kernel/gdt.h>
 #include <kernel/module.h>
 #include <kernel/vdso.h>
@@ -83,6 +84,9 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr, uint32_t oem)
     assert(mbi != NULL);
     if (memory_init(mbi) != 0) {
         panic("Physical memory initialization failed!");
+    }
+    if (vmm_init() != 0) {
+        panic("Virtual memory initialization failed!");
     }
     gdt_init();
     if (!acpi_init()) {

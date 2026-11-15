@@ -270,3 +270,7 @@ uint32_t memory_free_pages(void) {
 uint32_t memory_used_pages(void) {
     return total_pages - free_pages;
 }
+
+uint32_t *memory_kernel_page_directory(void) {
+    return page_directory;
+}

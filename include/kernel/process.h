@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <kernel/user.h>
+#include <memory/vmm.h>
 
 #define PROCESS_STATE_UNUSED    0
 #define PROCESS_STATE_READY     1
@@ -23,6 +24,7 @@ struct process {
     uint32_t kernel_stack_size;
     uint32_t *interrupt_frame;
     uint32_t fork_child;
+    struct address_space *address_space;
 
     uint32_t context[6];
 
