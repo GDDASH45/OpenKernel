@@ -61,6 +61,19 @@ static int read_inode(uint32_t number, struct sokfs_inode *inode)
         (inode->type != SOKFS_TYPE_FILE &&
          inode->type != SOKFS_TYPE_DIRECTORY))
         return -1;
+    if (inode->type == SOKFS_TYPE_DIRECTORY) {
+        if (inode->start_sector < mounted_super.data_start ||
+            inode->start_sector >= mounted_super.total_sectors ||
+            inode->sector_count != 1)
+            return -1;
+    } else if (inode->size != 0) {
+        if (inode->sector_count == 0 ||
+            inode->start_sector < mounted_super.data_start ||
+            inode->start_sector >= mounted_super.total_sectors ||
+            inode->sector_count > mounted_super.total_sectors - inode->start_sector ||
+            inode->size > inode->sector_count * SOKFS_SECTOR_SIZE)
+            return -1;
+    }
     return 0;
 }
 
@@ -203,7 +216,7 @@ int sokfs_format(uint32_t start_lba, uint32_t sector_count)
     root.type = SOKFS_TYPE_DIRECTORY;
     root.mode = 0755U;
     if (allocate_run(1, &root.start_sector) != 0 ||
-        write_inode(0, &root) != 0) {
+        ata_write_sector(volume_start + root.start_sector, zero) != 0) {
         mounted = 0;
         return -1;
     }
