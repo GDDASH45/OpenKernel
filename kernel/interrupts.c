@@ -8,6 +8,7 @@
 #include <driver/keyboard.h>
 #include <kernel/process.h>
 #include <kernel/gdt.h>
+#include <kernel/pit.h>
 #include <memory/vmm.h>
 
 #define PIC1_COMMAND 0x20
@@ -148,7 +149,9 @@ uint32_t *interrupt_handler(void *registers) {
 
     if (vector >= PIC1_OFFSET && vector < PIC1_OFFSET + 16) {
         uint8_t irq = (uint8_t)(vector - PIC1_OFFSET);
-        if (irq == 1) {
+        if (irq == 0) {
+            pit_irq_handler();
+        } else if (irq == 1) {
             keyboard_irq_handler();
         } else if (irq == 12) {
             mouse_irq_handler();
