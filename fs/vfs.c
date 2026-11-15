@@ -6,6 +6,7 @@
 #include "proc/proc.h"
 #include <fs/sys/sysfs.h>
 #include <memory/page.h>
+#include <kernel/pit.h>
 
 #define MAX_VFS_NODES 256
 #define MAX_VFS_MOUNTS 16
@@ -30,6 +31,20 @@ static int console_device_write(struct vfs_node *node, const char *buffer,
     return (int)size;
 }
 
+static uint32_t device_write_decimal(char *buffer, uint32_t capacity, uint64_t value)
+{
+    char digits[20];
+    uint32_t count = 0;
+    do {
+        digits[count++] = (char)('0' + value % 10u);
+        value /= 10u;
+    } while (value != 0 && count < sizeof(digits));
+    uint32_t copied = count < capacity ? count : capacity;
+    for (uint32_t index = 0; index < copied; index++) {
+        buffer[index] = digits[count - index - 1u];
+    }
+    return copied;
+}
 static int device_read(struct vfs_node *node, char *buffer, uint32_t size) {
     uint32_t type = (uint32_t)(uintptr_t)node->data;
 
@@ -38,6 +53,13 @@ static int device_read(struct vfs_node *node, char *buffer, uint32_t size) {
     }
     if (type == VFS_DEVICE_NULL || type == VFS_DEVICE_CONSOLE) {
         return 0;
+    }
+    if (type == VFS_DEVICE_UPTIME) {
+        uint32_t used;
+        if (size == 0) return 0;
+        used = device_write_decimal(buffer, size, pit_get_uptime_ms());
+        if (used < size) buffer[used++] = '\n';
+        return (int)used;
     }
     if (type == VFS_DEVICE_KEYBOARD) {
         uint32_t copied = 0;
@@ -54,7 +76,7 @@ static int device_read(struct vfs_node *node, char *buffer, uint32_t size) {
         return net_device_read(buffer, size);
     }
     for (uint32_t index = 0; index < size; index++) {
-        if (type == VFS_DEVICE_RANDOM) {
+        if (type == VFS_DEVICE_RANDOM || type == VFS_DEVICE_URANDOM) {
             random_state = random_state * 1664525u + 1013904223u;
             buffer[index] = (char)(random_state >> 24);
         } else {
@@ -76,6 +98,9 @@ static int device_write(struct vfs_node *node, const char *buffer,
     }
     if (type == VFS_DEVICE_NETWORK) {
         return net_device_write(buffer, size);
+    }
+    if (type == VFS_DEVICE_FULL) {
+        return -28;
     }
     return (int)size;
 }
@@ -482,7 +507,9 @@ int vfs_create_device(const char *path, uint32_t type) {
     if (path == 0 || path[0] != '/' || path[1] == '\0' ||
         (type != VFS_DEVICE_CONSOLE && type != VFS_DEVICE_NULL &&
          type != VFS_DEVICE_ZERO && type != VFS_DEVICE_RANDOM &&
-         type != VFS_DEVICE_KEYBOARD && type != VFS_DEVICE_NETWORK)) {
+         type != VFS_DEVICE_KEYBOARD && type != VFS_DEVICE_NETWORK &&
+         type != VFS_DEVICE_FULL && type != VFS_DEVICE_URANDOM &&
+         type != VFS_DEVICE_UPTIME)) {
         return -1;
     }
     while (path[path_length] != '\0' && path_length < sizeof(parent_path)) {
@@ -683,6 +710,9 @@ void mount_essential_folders(void) {
         vfs_create_device("/dev/zero", VFS_DEVICE_ZERO) != 0 ||
         vfs_create_device("/dev/random", VFS_DEVICE_RANDOM) != 0 ||
         vfs_create_device("/dev/keyboard", VFS_DEVICE_KEYBOARD) != 0 ||
+        vfs_create_device("/dev/full", VFS_DEVICE_FULL) != 0 ||
+        vfs_create_device("/dev/urandom", VFS_DEVICE_URANDOM) != 0 ||
+        vfs_create_device("/dev/uptime", VFS_DEVICE_UPTIME) != 0 ||
         vfs_create_device("/dev/fb0", VFS_DEVICE_CONSOLE) != 0) {
         k_print("[VFS] Failed to populate devtmpfs.\n");
         return;

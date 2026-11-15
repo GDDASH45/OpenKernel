@@ -45,6 +45,10 @@
 #define OK_SYS_VDSO 23u
 #define OK_SYS_REBOOT 24u
 #define OK_SYS_FILE_READ 25u
+#define OK_SYS_GETUID 26u
+#define OK_SYS_GETPPID 27u
+#define OK_SYS_UPTIME_MS 28u
+#define OK_SYS_GETTICKS 29u
 
 #define OK_VDSO_ABI_VERSION 1u
 #define OK_VDSO_PAGE_SIZE 4096u
