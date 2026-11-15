@@ -464,9 +464,12 @@ static int inflate_gzip(const uint8_t *input, uint32_t input_size,
 #define ELF_R_386_NONE 0u
 #define ELF_R_386_32 1u
 #define ELF_R_386_PC32 2u
-#define KASLR_MINIMUM 0x01000000u
-#define KASLR_MAXIMUM 0x80000000u
+#define KASLR_MINIMUM 0x80000000u
+#define KASLR_MAXIMUM 0xC0000000u
 #define KASLR_GRANULARITY 0x00400000u
+#define PAGE_DIRECTORY_ENTRIES 1024u
+#define PAGE_SIZE_4M 0x00400000u
+#define PAGE_FLAGS_4M 0x083u
 
 struct elf32_section_header {
     uint32_t name;
@@ -495,14 +498,9 @@ struct elf32_rel {
     uint32_t info;
 } __attribute__((packed));
 
-struct loader_mmap_entry {
-    uint32_t size;
-    uint64_t address;
-    uint64_t length;
-    uint32_t type;
-} __attribute__((packed));
-
 static uint32_t kaslr_random_state;
+static uint32_t kaslr_page_directory[PAGE_DIRECTORY_ENTRIES]
+    __attribute__((aligned(4096)));
 
 static uint32_t kaslr_random(void) {
     uint32_t value = kaslr_random_state;
@@ -518,47 +516,11 @@ static int range_overlaps(uint32_t first, uint32_t end,
     return first < other_end && other_first < end;
 }
 
-static int kaslr_range_usable(const struct multiboot_info *boot_info,
-                              uint32_t first, uint32_t end) {
-    int found = 0;
-
+/* The kernel's virtual alias replaces identity mappings in this window. */
+static int kaslr_range_available(const struct multiboot_info *boot_info,
+                                 uint32_t first, uint32_t end) {
     if (first < KASLR_MINIMUM || end <= first || end > KASLR_MAXIMUM)
         return 0;
-
-    if ((boot_info->flags & (1u << 6)) != 0 &&
-        boot_info->mmap_addr != 0 && boot_info->mmap_length != 0) {
-        uint32_t offset = 0;
-        if (boot_info->mmap_addr >
-            0xFFFFFFFFu - boot_info->mmap_length)
-            return 0;
-        while (offset + sizeof(uint32_t) <= boot_info->mmap_length) {
-            const struct loader_mmap_entry *entry =
-                (const struct loader_mmap_entry *)(uintptr_t)
-                    (boot_info->mmap_addr + offset);
-            uint32_t entry_size = entry->size;
-            uint64_t region_end;
-
-            if (entry_size < 20u ||
-                entry_size > boot_info->mmap_length - offset -
-                             sizeof(uint32_t))
-                return 0;
-            region_end = entry->address + entry->length;
-            if (entry->type == 1u && region_end >= entry->address &&
-                entry->address <= first && region_end >= end)
-                found = 1;
-            offset += entry_size + sizeof(uint32_t);
-        }
-        if (!found)
-            return 0;
-    } else if ((boot_info->flags & 1u) != 0) {
-        uint64_t memory_end = 0x100000ull +
-                              (uint64_t)boot_info->mem_upper * 1024u;
-        if (memory_end < end)
-            return 0;
-        found = 1;
-    } else {
-        return 0;
-    }
 
     if ((uint32_t)(uintptr_t)boot_info >
         0xFFFFFFFFu - (uint32_t)sizeof(*boot_info))
@@ -566,17 +528,21 @@ static int kaslr_range_usable(const struct multiboot_info *boot_info,
     if (range_overlaps(first, end, (uint32_t)(uintptr_t)boot_info,
                        (uint32_t)(uintptr_t)boot_info + sizeof(*boot_info)))
         return 0;
-    if ((boot_info->flags & (1u << 6)) != 0) {
+
+    if ((boot_info->flags & (1u << 6)) != 0 &&
+        boot_info->mmap_addr != 0 && boot_info->mmap_length != 0) {
         if (boot_info->mmap_addr > 0xFFFFFFFFu - boot_info->mmap_length ||
             range_overlaps(first, end, boot_info->mmap_addr,
                            boot_info->mmap_addr + boot_info->mmap_length))
             return 0;
     }
+
     if ((boot_info->flags & (1u << 3)) != 0 &&
         boot_info->mods_count != 0 && boot_info->mods_addr != 0) {
         const struct multiboot_module *modules =
             (const struct multiboot_module *)(uintptr_t)boot_info->mods_addr;
         uint32_t module_table_size;
+
         if (boot_info->mods_count > 0xFFFFFFFFu / sizeof(*modules))
             return 0;
         module_table_size = boot_info->mods_count * sizeof(*modules);
@@ -591,6 +557,7 @@ static int kaslr_range_usable(const struct multiboot_info *boot_info,
                 return 0;
         }
     }
+
     if ((boot_info->flags & (1u << 2)) != 0 &&
         boot_info->cmdline != 0) {
         const char *command_line =
@@ -604,7 +571,49 @@ static int kaslr_range_usable(const struct multiboot_info *boot_info,
                            boot_info->cmdline + length + 1u))
             return 0;
     }
-    return found;
+
+    if ((boot_info->flags & (1u << 7)) != 0 &&
+        boot_info->drives_addr != 0 && boot_info->drives_length != 0) {
+        if (boot_info->drives_addr >
+                0xFFFFFFFFu - boot_info->drives_length ||
+            range_overlaps(first, end, boot_info->drives_addr,
+                           boot_info->drives_addr + boot_info->drives_length))
+            return 0;
+    }
+
+    if ((boot_info->flags & (1u << 9)) != 0 &&
+        boot_info->boot_loader_name != 0) {
+        const char *name =
+            (const char *)(uintptr_t)boot_info->boot_loader_name;
+        uint32_t length = 0;
+        while (length < 256u && name[length] != '\0')
+            length++;
+        if (length == 256u ||
+            boot_info->boot_loader_name > 0xFFFFFFFFu - length - 1u ||
+            range_overlaps(first, end, boot_info->boot_loader_name,
+                           boot_info->boot_loader_name + length + 1u))
+            return 0;
+    }
+
+    if ((boot_info->flags & (1u << 11)) != 0) {
+        if (range_overlaps(first, end, boot_info->vbe_control_info,
+                           boot_info->vbe_control_info + 512u) ||
+            range_overlaps(first, end, boot_info->vbe_mode_info,
+                           boot_info->vbe_mode_info + 256u))
+            return 0;
+    }
+
+    if ((boot_info->flags & (1u << 12)) != 0) {
+        uint64_t framebuffer_end = boot_info->framebuffer_addr +
+            (uint64_t)boot_info->framebuffer_pitch *
+            boot_info->framebuffer_height;
+        if (framebuffer_end < boot_info->framebuffer_addr)
+            return 0;
+        if ((uint64_t)first < framebuffer_end &&
+            boot_info->framebuffer_addr < (uint64_t)end)
+            return 0;
+    }
+    return 1;
 }
 
 static int kaslr_is_disabled(const struct multiboot_info *boot_info) {
@@ -674,9 +683,7 @@ static uint32_t choose_kernel_slide(const struct multiboot_info *boot_info,
         uint32_t candidate = KASLR_MINIMUM +
                              slot * KASLR_GRANULARITY;
         uint32_t end = candidate + span;
-        if (candidate < minimum)
-            continue;
-        if (kaslr_range_usable(boot_info, candidate, end))
+        if (kaslr_range_available(boot_info, candidate, end))
             return candidate - minimum;
     }
     return 0;
@@ -684,26 +691,62 @@ static uint32_t choose_kernel_slide(const struct multiboot_info *boot_info,
 
 static volatile uint32_t *relocation_target(
     const struct elf32_program_header **headers, uint32_t load_count,
-    uint32_t address, uint32_t slide) {
-    uint32_t original = address;
-    uint32_t relocated = address + slide;
-
-    if (relocated < address)
-        return 0;
+    uint32_t address) {
     for (uint32_t index = 0; index < load_count; index++) {
-        uint32_t start = headers[index]->virtual_address;
+        uint32_t start = headers[index]->physical_address;
         uint32_t end = start + headers[index]->memory_size;
-        if (original >= start && original <= end &&
-            end - original >= sizeof(uint32_t))
-            return (volatile uint32_t *)(uintptr_t)relocated;
+        if (address >= start && address <= end &&
+            end - address >= sizeof(uint32_t))
+            return (volatile uint32_t *)(uintptr_t)address;
     }
     return 0;
 }
 
+static int enable_kaslr_paging(uint32_t physical_base,
+                               uint32_t image_size, uint32_t slide) {
+    uint32_t virtual_base = physical_base + slide;
+    uint32_t cr4;
+    uint32_t cr0;
+
+    if (slide == 0 || virtual_base < physical_base ||
+        (physical_base & (PAGE_SIZE_4M - 1u)) != 0 ||
+        (virtual_base & (PAGE_SIZE_4M - 1u)) != 0 ||
+        virtual_base >= KASLR_MAXIMUM ||
+        image_size > KASLR_MAXIMUM - virtual_base)
+        return -1;
+
+    for (uint32_t index = 0; index < PAGE_DIRECTORY_ENTRIES; index++)
+        kaslr_page_directory[index] = index * PAGE_SIZE_4M | PAGE_FLAGS_4M;
+
+    for (uint32_t offset = 0; offset < image_size;
+         offset += PAGE_SIZE_4M) {
+        uint32_t virtual_address = virtual_base + offset;
+        uint32_t physical_address = physical_base + offset;
+        uint32_t directory_index = virtual_address >> 22;
+
+        if (directory_index >= PAGE_DIRECTORY_ENTRIES ||
+            physical_address >= KERNEL_LOAD_LIMIT)
+            return -1;
+        kaslr_page_directory[directory_index] =
+            physical_address | PAGE_FLAGS_4M;
+    }
+
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    cr4 |= 0x10u;
+    __asm__ volatile ("mov %0, %%cr4" : : "r"(cr4) : "memory");
+    __asm__ volatile ("mov %0, %%cr3" : :
+                      "r"((uint32_t)(uintptr_t)kaslr_page_directory) :
+                      "memory");
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+    cr0 |= 0x80000000u;
+    __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0) : "memory");
+    return 0;
+}
+
 /*
- * The kernel is linked at its normal address. --emit-relocs preserves the
- * static ELF relocation records so this loader can adjust absolute and
- * PC-relative references after choosing a physical load slide.
+ * The kernel is linked at its physical load address. --emit-relocs preserves
+ * static ELF relocation records so references can be redirected to the
+ * randomized virtual alias while the image remains at its physical address.
  */
 static int apply_kernel_relocations(
     const uint8_t *image, uint32_t image_size,
@@ -784,8 +827,7 @@ static int apply_kernel_relocations(
                 original_place < minimum ||
                 original_place > maximum - sizeof(uint32_t))
                 return -1;
-            target = relocation_target(headers, load_count,
-                                       original_place, slide);
+            target = relocation_target(headers, load_count, original_place);
             if (target == 0)
                 return -1;
             symbol = &symbols[symbol_index];
