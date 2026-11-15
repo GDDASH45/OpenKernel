@@ -1,5 +1,6 @@
 #include <fs/iso9660/iso9660.h>
 #include <kernel/ports.h>
+#include <kernel/ata.h>
 #include <stdint.h>
 
 #define ATAPI_DATA          0
@@ -28,12 +29,33 @@
 static int atapi_device = -1;
 static uint16_t atapi_io_base;
 static int iso_mounted;
+static int iso_ata_image;
+static uint32_t iso_image_start_lba;
 static uint32_t iso_volume_sectors;
 static uint32_t iso_root_lba;
 static uint32_t iso_root_size;
 static int iso_joliet;
 static uint8_t iso_sector[ISO_SECTOR_SIZE];
 static uint16_t atapi_identify_data[256];
+
+/* Read one ISO logical block from ATAPI media or a 2048-byte ATA image block. */
+static int iso_read_block(uint32_t lba, void *buffer)
+{
+    if (!iso_ata_image)
+        return atapi_read_block(lba, buffer);
+
+    if (buffer == 0 || lba > 0xFFFFFFFFu / 4u ||
+        iso_image_start_lba > 0xFFFFFFFFu - lba * 4u - 3u)
+        return -1;
+
+    for (uint32_t i = 0; i < 4; ++i) {
+        if (ata_read_sector(iso_image_start_lba + lba * 4u + i,
+                            (uint8_t *)buffer + i * 512u) != 0)
+            return -1;
+    }
+    return 0;
+}
+
 
 static void atapi_insw(uint16_t port, uint16_t *buffer, uint32_t count)
 {
@@ -530,6 +552,7 @@ int iso9660_mount(void)
     iso_joliet = 0;
     atapi_device = -1;
 
+    if (!iso_ata_image) {
     for (channel = 0; channel < 2 && atapi_device < 0; ++channel) {
         for (device = 0; device < 2; ++device) {
             if (atapi_probe(channels[channel], device) == 0) {
@@ -541,6 +564,7 @@ int iso9660_mount(void)
 
     if (atapi_device < 0)
         return -1;
+    }
 
     for (lba = 16; lba < 80; ++lba) {
         uint8_t *descriptor;
@@ -616,9 +640,54 @@ int iso9660_mount(void)
     return 0;
 }
 
+int iso9660_mount_image(uint32_t image_start_lba)
+{
+    iso_image_start_lba = image_start_lba;
+    iso_ata_image = 1;
+    return iso9660_mount();
+}
+
 int iso9660_is_mounted(void)
 {
     return iso_mounted;
+}
+
+int iso9660_write_file(const char *path, const void *buffer, uint32_t size)
+{
+    uint32_t extent, file_size, copied = 0;
+    int is_directory;
+
+    if (!iso_mounted || !iso_ata_image || (!buffer && size))
+        return -1;
+    if (iso_resolve(path, &extent, &file_size, &is_directory) != 0 ||
+        is_directory || size != file_size)
+        return -1;
+
+    while (copied < size) {
+        uint32_t amount = size - copied;
+        uint32_t block = extent + copied / ISO_SECTOR_SIZE;
+
+        if (amount > ISO_SECTOR_SIZE)
+            amount = ISO_SECTOR_SIZE;
+        if (iso_read_block(block, iso_sector) != 0)
+            return -1;
+
+        for (uint32_t i = 0; i < amount; ++i)
+            iso_sector[i] = ((const uint8_t *)buffer)[copied + i];
+
+        if (block >= iso_volume_sectors ||
+            block > 0xFFFFFFFFu / 4u ||
+            iso_image_start_lba > 0xFFFFFFFFu - block * 4u - 3u)
+            return -1;
+
+        for (uint32_t i = 0; i < 4; ++i) {
+            if (ata_write_sector(iso_image_start_lba + block * 4u + i,
+                                 iso_sector + i * 512u) != 0)
+                return -1;
+        }
+        copied += amount;
+    }
+    return (int)copied;
 }
 
 int iso9660_read_file(const char *path, void *buffer, uint32_t capacity)
