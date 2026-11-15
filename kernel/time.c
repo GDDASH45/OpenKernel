@@ -1,10 +1,8 @@
 #include <stdint.h>
+#include <kernel/time.h>
+#include <kernel/pit.h>
 
-void sleep_ms(uint32_t ms) {
-    volatile uint32_t i, j;
-    for (i = 0; i < ms; i++) {
-        for (j = 0; j < 40000; j++) {
-            __asm__ __volatile__("nop");
-        }
-    }
+void sleep_ms(uint32_t ms)
+{
+    pit_sleep_ms(ms);
 }
