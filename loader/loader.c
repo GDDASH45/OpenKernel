@@ -713,6 +713,7 @@ static uint32_t choose_kernel_slide(const struct multiboot_info *boot_info,
     uint32_t tsc_high;
 
     if (kaslr_is_disabled(boot_info) || span == 0 ||
+        (minimum & (KASLR_GRANULARITY - 1u)) != 0 ||
         span >= KASLR_MAXIMUM - KASLR_MINIMUM)
         return 0;
 
