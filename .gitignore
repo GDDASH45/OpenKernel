@@ -24,4 +24,8 @@ openkernel
 scripts/oconf/config-build
 scripts/oconf/config-parser
 
+tools/mkfs.kfs
+tools/mkfs.okfs
+tools/mkfs.sokfs
+
 /privatebfs.sh
