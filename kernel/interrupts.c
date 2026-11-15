@@ -6,6 +6,7 @@
 #include <driver/mouse.h>
 #include <driver/keyboard.h>
 #include <kernel/process.h>
+#include <kernel/gdt.h>
 
 #define PIC1_COMMAND 0x20
 #define PIC1_DATA    0x21
@@ -45,8 +46,7 @@ static void idt_set_gate(uint8_t vector, uintptr_t handler) {
     uint32_t address = (uint32_t)handler;
 
     idt[vector].offset_low = (uint16_t)(address & 0xFFFF);
-    /* GRUB's Multiboot GDT uses 0x10 for 32-bit code and 0x18 for data. */
-    idt[vector].selector = 0x10;
+    idt[vector].selector = GDT_KERNEL_CODE;
     idt[vector].zero = 0;
     idt[vector].attributes = vector == SYSCALL_VECTOR ? 0xEE : 0x8E;
     idt[vector].offset_high = (uint16_t)(address >> 16);

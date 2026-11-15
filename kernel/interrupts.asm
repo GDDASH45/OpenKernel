@@ -15,7 +15,7 @@ isr_common_stub:
     push fs
     push gs
 
-    mov ax, 0x18
+    mov ax, 0x10
     mov ds, ax
     mov es, ax
     mov fs, ax
@@ -41,7 +41,7 @@ irq_common_stub:
     push fs
     push gs
 
-    mov ax, 0x18
+    mov ax, 0x10
     mov ds, ax
     mov es, ax
     mov fs, ax

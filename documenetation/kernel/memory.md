@@ -28,3 +28,20 @@ address space and must not be treated as a security boundary.
 `oom_kill()` still logs the requested range and panics; it does not reclaim
 memory or kill an isolated process. See [Programs and processes](processes.md)
 for loader constraints and [Kernel panic](panic.md) for failure behavior.
+
+
+## Aligned page allocation
+
+The physical page allocator also provides `memory_alloc_pages_aligned(count, alignment_pages)`.
+The alignment must be a nonzero power of two, expressed in 4 KiB pages. The
+existing `memory_alloc_pages(count)` API remains available and uses one-page
+alignment. `memory_used_pages()` reports usable pages currently marked allocated.
+
+## Privilege transition prerequisites
+
+OpenKernel's GDT/TSS setup defines ring 0 and ring 3 code/data selectors and
+loads a TSS with a kernel-entry stack. The ring-3 entry helper requires its
+entry point and stack to be mapped with user permissions. The current identity
+mapping is supervisor-only, so this change establishes segmentation and the
+privilege-transition interface; it does not yet make existing executable
+loading or processes isolated ring-3 tasks.
