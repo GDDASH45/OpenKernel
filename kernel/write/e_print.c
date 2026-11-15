@@ -2,6 +2,8 @@
 #include <write/write.h>
 #include <kernel/rtc.h>
 
+extern int rtc_get_time(struct rtc_time *time) __attribute__((weak));
+
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -583,7 +585,7 @@ void printk(const char *format, ...)
     struct rtc_time now;
     va_list args;
 
-    if (rtc_get_time(&now) == 0) {
+    if (rtc_get_time != 0 && rtc_get_time(&now) == 0) {
         ewrite("[");
         ewrite_uint(now.year);
         ewrite_char('-');
