@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <kernel.h>
+#include <write/write.h>
 #include <kernel/interrupts.h>
 #include <kernel/ports.h>
 #include <kernel/syscall.h>
