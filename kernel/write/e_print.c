@@ -1,5 +1,6 @@
 
 #include <write/write.h>
+#include <kernel/rtc.h>
 
 #include <limits.h>
 #include <stddef.h>
@@ -565,6 +566,40 @@ void ewritev(const char *format, va_list args)
 void ewritef(const char *format, ...)
 {
     va_list args;
+
+    va_start(args, format);
+    ewritev(format, args);
+    va_end(args);
+}
+
+static void ewrite_two_digits(uint8_t value)
+{
+    ewrite_char((char)('0' + (value / 10u) % 10u));
+    ewrite_char((char)('0' + value % 10u));
+}
+
+void printk(const char *format, ...)
+{
+    struct rtc_time now;
+    va_list args;
+
+    if (rtc_get_time(&now) == 0) {
+        ewrite("[");
+        ewrite_uint(now.year);
+        ewrite_char('-');
+        ewrite_two_digits(now.month);
+        ewrite_char('-');
+        ewrite_two_digits(now.day);
+        ewrite_char(' ');
+        ewrite_two_digits(now.hour);
+        ewrite_char(':');
+        ewrite_two_digits(now.minute);
+        ewrite_char(':');
+        ewrite_two_digits(now.second);
+        ewrite("] ");
+    } else {
+        ewrite("[time unavailable] ");
+    }
 
     va_start(args, format);
     ewritev(format, args);
