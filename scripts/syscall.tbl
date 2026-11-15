@@ -6,7 +6,7 @@
 2   getpid           -                      -              -              process ID
 3   yield            -                      -              -              zero
 4   console_write    buffer                 size           -              bytes written
-5   fork             -                      -              -              -ENOSYS (not implemented)
+5   fork             -                      -              -              child PID in parent; zero in child
 6   execve           path                   argv           envp           execution result
 7   getchar          -                      -              -              character or -EAGAIN
 8   clear            -                      -              -              zero
@@ -22,6 +22,13 @@
 18  net_udp_send     request_ptr             -              -              payload bytes sent
 19  net_udp_receive  destination_port       packet_ptr     -              payload bytes received
 20  net_get_ipv4     -                      -              -              IPv4 address (host integer)
+21  module_insert    path                   -              -              module load result
+22  module_remove    module_name            -              -              zero or error
+23  vdso             -                      -              -              vDSO page address
 24  reboot           -                      -              -              system reboot; does not return
 25  file_read        path                   buffer         capacity      bytes read from persistent storage
+26  getuid           -                      -              -              current process UID
+27  getppid          -                      -              -              parent process ID
+28  uptime_ms        -                      -              -              system uptime in milliseconds
+29  getticks         -                      -              -              PIT tick count
 72  panic            -                      -              -              kernel panic; does not return
