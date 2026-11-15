@@ -6,7 +6,6 @@
 #include <kernel/vdso.h>
 #include <kernel/gdt.h>
 #include <memory/address_space.h>
-#include <memory/address_space.h>
 
 static uint32_t current_pid;
 static uint32_t next_pid;
@@ -424,10 +423,6 @@ uint32_t *process_interrupt_return(
 
     current_process = next;
     current_pid = next->pid;
-
-    if (address_space_activate(next->address_space) != 0) {
-        panic("Could not switch process address space!");
-    }
 
     if (address_space_activate(next->address_space) != 0) {
         panic("Could not switch process address space!");

@@ -45,3 +45,28 @@ entry point and stack to be mapped with user permissions. The current identity
 mapping is supervisor-only, so this change establishes segmentation and the
 privilege-transition interface; it does not yet make existing executable
 loading or processes isolated ring-3 tasks.
+
+## Per-process address spaces
+
+The virtual-memory layer now provides independent page directories cloned from
+the kernel's supervisor-only 4 MiB identity map. Each address space can map,
+unmap, and change permissions on individual 4 KiB pages in the user virtual
+window `0xC0000000-0xFFFFFFFF`. Page-table entries, rather than only directory
+entries, carry the user-accessible bit, so a user mapping does not make the
+other identity-mapped pages in that 4 MiB region accessible at CPL3.
+
+The top 1 GiB of physical memory is reserved by the physical allocator because
+the current kernel uses an identity map. This keeps physical kernel allocations
+from colliding with the user virtual window. The remaining physical memory is
+identity mapped for kernel use.
+
+Processes created through `process_enter_program()` receive a distinct address
+space. Returning from the program restores the parent's address space, and the
+interrupt scheduler switches address spaces when selecting another process.
+Passing a null address-space pointer selects the kernel page directory.
+
+This is the virtual-memory foundation, not a complete userspace loader:
+executable segments and user stacks are not mapped automatically, fork does
+not yet duplicate user mappings, and page faults are reported as kernel panics
+with the faulting CR2 address and x86 error code. Do not enter ring 3 until the
+program image and stack have been mapped with `VMM_PAGE_USER` permissions.
