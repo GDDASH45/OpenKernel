@@ -2,205 +2,349 @@
 #include <kernel/interrupts.h>
 #include <kernel/ports.h>
 
-#define PS2_STATUS       0x64
-#define PS2_COMMAND      0x64
-#define PS2_DATA         0x60
+#define PS2_DATA              0x60
+#define PS2_STATUS            0x64
+#define PS2_COMMAND           0x64
+#define PS2_OUTPUT_FULL       0x01
+#define PS2_INPUT_FULL        0x02
+#define PS2_AUX_DATA          0x20
+#define PS2_ENABLE_AUX        0xA8
+#define PS2_READ_CONFIG       0x20
+#define PS2_WRITE_CONFIG      0x60
+#define PS2_WRITE_AUX         0xD4
 
-#define PS2_OUTPUT_FULL  0x01
-#define PS2_INPUT_FULL   0x02
-#define PS2_AUX_DATA     0x20
+#define MOUSE_ACK             0xFA
+#define MOUSE_RESEND          0xFE
+#define MOUSE_GET_ID          0xF2
+#define MOUSE_SET_DEFAULTS    0xF6
+#define MOUSE_ENABLE          0xF4
+#define MOUSE_SET_SAMPLE_RATE 0xF3
 
-#define MOUSE_ACK        0xFA
+#define MOUSE_PACKET_STANDARD 3
+#define MOUSE_PACKET_WHEEL    4
+#define PS2_TIMEOUT           100000u
+#define MOUSE_COMMAND_RETRIES 3u
+#define MOUSE_IRQ_DRAIN_LIMIT 16u
 
-static volatile int mouse_x;
-static volatile int mouse_y;
-static int mouse_max_x;
-static int mouse_max_y;
-static volatile uint8_t mouse_buttons;
+static volatile struct mouse_state current_state;
 static volatile uint32_t mouse_generation;
-static uint32_t mouse_seen_generation;
-
-static uint8_t packet[3];
+static uint32_t seen_generation;
+static int32_t max_x;
+static int32_t max_y;
+static uint8_t packet[4];
 static uint8_t packet_index;
+static uint8_t packet_length;
+static uint8_t device_id;
 static int mouse_ready;
 
-static int wait_for_write(void) {
-    uint32_t timeout = 10000;
-
-    while ((port_byte_in(PS2_STATUS) & PS2_INPUT_FULL) && timeout != 0) {
-        timeout--;
-    }
-    return timeout != 0;
+static uint32_t irq_save(void)
+{
+    uint32_t flags;
+    __asm__ volatile ("pushfl; popl %0; cli"
+                      : "=r"(flags) : : "memory");
+    return flags;
 }
 
-static int wait_for_read(void) {
-    uint32_t timeout = 10000;
-
-    while (!(port_byte_in(PS2_STATUS) & PS2_OUTPUT_FULL) && timeout != 0) {
-        timeout--;
-    }
-    return timeout != 0;
+static void irq_restore(uint32_t flags)
+{
+    __asm__ volatile ("pushl %0; popfl"
+                      : : "r"(flags) : "memory", "cc");
 }
 
-static int wait_for_mouse_data(void) {
-    uint32_t timeout = 10000;
-
+static int wait_for_input_empty(void)
+{
+    uint32_t timeout = PS2_TIMEOUT;
     while (timeout != 0) {
-        uint8_t status = port_byte_in(PS2_STATUS);
-        if ((status & (PS2_OUTPUT_FULL | PS2_AUX_DATA)) ==
-            (PS2_OUTPUT_FULL | PS2_AUX_DATA)) {
-            return 1;
-        }
+        if ((port_byte_in(PS2_STATUS) & PS2_INPUT_FULL) == 0) return 1;
         timeout--;
     }
     return 0;
 }
 
-static int send_mouse_command(uint8_t command) {
-    if (!wait_for_write()) {
-        return 0;
+static int wait_for_output_full(void)
+{
+    uint32_t timeout = PS2_TIMEOUT;
+    while (timeout != 0) {
+        if (port_byte_in(PS2_STATUS) & PS2_OUTPUT_FULL) return 1;
+        timeout--;
     }
-    port_byte_out(PS2_COMMAND, 0xD4);
-
-    if (!wait_for_write()) {
-        return 0;
-    }
-    port_byte_out(PS2_DATA, command);
-
-    if (!wait_for_mouse_data()) {
-        return 0;
-    }
-    return port_byte_in(PS2_DATA) == MOUSE_ACK;
+    return 0;
 }
 
-int init_mouse(uint32_t screen_width, uint32_t screen_height) {
+static int wait_for_aux_output(void)
+{
+    uint32_t timeout = PS2_TIMEOUT;
+    while (timeout != 0) {
+        uint8_t status = port_byte_in(PS2_STATUS);
+        if ((status & (PS2_OUTPUT_FULL | PS2_AUX_DATA)) ==
+            (PS2_OUTPUT_FULL | PS2_AUX_DATA)) return 1;
+        timeout--;
+    }
+    return 0;
+}
+
+static int controller_command(uint8_t command)
+{
+    if (!wait_for_input_empty()) return 0;
+    port_byte_out(PS2_COMMAND, command);
+    return 1;
+}
+
+static int controller_read_config(uint8_t *config)
+{
+    if (config == 0 || !controller_command(PS2_READ_CONFIG) ||
+        !wait_for_output_full()) return 0;
+    *config = port_byte_in(PS2_DATA);
+    return 1;
+}
+
+static int controller_write_config(uint8_t config)
+{
+    if (!controller_command(PS2_WRITE_CONFIG) || !wait_for_input_empty())
+        return 0;
+    port_byte_out(PS2_DATA, config);
+    return 1;
+}
+
+static int mouse_read_response(uint8_t *value)
+{
+    if (value == 0 || !wait_for_aux_output()) return 0;
+    *value = port_byte_in(PS2_DATA);
+    return 1;
+}
+
+static int mouse_write_byte(uint8_t value)
+{
+    if (!controller_command(PS2_WRITE_AUX) || !wait_for_input_empty())
+        return 0;
+    port_byte_out(PS2_DATA, value);
+    return 1;
+}
+
+static int mouse_send_byte(uint8_t value)
+{
+    for (uint32_t attempt = 0; attempt < MOUSE_COMMAND_RETRIES; attempt++) {
+        uint8_t response;
+        if (!mouse_write_byte(value) || !mouse_read_response(&response))
+            return 0;
+        if (response == MOUSE_ACK) return 1;
+        if (response != MOUSE_RESEND) return 0;
+    }
+    return 0;
+}
+
+static int mouse_send_sample_rate(uint8_t rate)
+{
+    return mouse_send_byte(MOUSE_SET_SAMPLE_RATE) && mouse_send_byte(rate);
+}
+
+static int mouse_get_device_id(uint8_t *id)
+{
+    return mouse_send_byte(MOUSE_GET_ID) && mouse_read_response(id);
+}
+
+static void mouse_try_wheel_mode(void)
+{
+    uint8_t id = 0;
+
+    /* IntelliMouse wheel-mode negotiation: sample rates 200, 100, 80. */
+    if (!mouse_send_sample_rate(200) ||
+        !mouse_send_sample_rate(100) ||
+        !mouse_send_sample_rate(80) ||
+        !mouse_get_device_id(&id)) return;
+
+    device_id = id;
+    if (id == 3 || id == 4) packet_length = MOUSE_PACKET_WHEEL;
+}
+
+static int32_t clamp_coordinate(int32_t value, int32_t maximum)
+{
+    if (value < 0) return 0;
+    if (value > maximum) return maximum;
+    return value;
+}
+
+static int32_t signed_wheel_delta(uint8_t value)
+{
+    value &= 0x0F;
+    return (value & 0x08) ? (int32_t)value - 16 : (int32_t)value;
+}
+
+static void publish_packet(void)
+{
+    uint8_t flags = packet[0];
+    uint8_t buttons = flags & 0x07;
+    uint8_t pressed;
+    uint8_t released;
+    int32_t dx = (flags & 0x40) ? 0 : (int32_t)(int8_t)packet[1];
+    int32_t dy = (flags & 0x80) ? 0 : -(int32_t)(int8_t)packet[2];
+    int32_t wheel = 0;
+
+    if (packet_length == MOUSE_PACKET_WHEEL) {
+        wheel = signed_wheel_delta(packet[3]);
+        if (device_id == 4) {
+            if (packet[3] & 0x10) buttons |= MOUSE_BUTTON_4;
+            if (packet[3] & 0x20) buttons |= MOUSE_BUTTON_5;
+        }
+    }
+
+    pressed = (uint8_t)(buttons & (uint8_t)~current_state.buttons);
+    released = (uint8_t)(current_state.buttons & (uint8_t)~buttons);
+
+    current_state.x = clamp_coordinate(current_state.x + dx, max_x);
+    current_state.y = clamp_coordinate(current_state.y + dy, max_y);
+    current_state.buttons = buttons;
+    current_state.pressed |= pressed;
+    current_state.released |= released;
+    current_state.delta_x += dx;
+    current_state.delta_y += dy;
+    current_state.wheel += wheel;
+    current_state.packets++;
+    mouse_generation++;
+}
+
+int init_mouse(uint32_t screen_width, uint32_t screen_height)
+{
     uint8_t config;
 
     if (screen_width == 0 || screen_height == 0 ||
-        screen_width > 0x7FFFFFFFu || screen_height > 0x7FFFFFFFu) {
+        screen_width > 0x7FFFFFFFu || screen_height > 0x7FFFFFFFu)
         return -1;
-    }
+
     if (mouse_ready) {
-        mouse_max_x = (int)screen_width - 1;
-        mouse_max_y = (int)screen_height - 1;
+        mouse_set_bounds(screen_width, screen_height);
         return 0;
     }
 
-    if (!wait_for_write()) {
-        return -1;
-    }
-    port_byte_out(PS2_COMMAND, 0xA8);
+    if (!controller_command(PS2_ENABLE_AUX) ||
+        !controller_read_config(&config)) return -1;
 
-    if (!wait_for_write()) {
-        return -1;
-    }
-    port_byte_out(PS2_COMMAND, 0x20);
-    if (!wait_for_read()) {
-        return -1;
-    }
-    config = port_byte_in(PS2_DATA);
-
-    /* Enable auxiliary-device IRQs and the mouse clock. */
+    /* Enable IRQ12 and the auxiliary clock without changing other bits. */
     config |= 0x02;
     config &= (uint8_t)~0x20;
-    if (!wait_for_write()) {
-        return -1;
-    }
-    port_byte_out(PS2_COMMAND, 0x60);
-    if (!wait_for_write()) {
-        return -1;
-    }
-    port_byte_out(PS2_DATA, config);
+    if (!controller_write_config(config)) return -1;
 
-    if (!send_mouse_command(0xF6) || !send_mouse_command(0xF4)) {
-        return -1;
-    }
+    if (!mouse_send_byte(MOUSE_SET_DEFAULTS)) return -1;
 
-    mouse_max_x = (int)screen_width - 1;
-    mouse_max_y = (int)screen_height - 1;
-    mouse_x = mouse_max_x / 2;
-    mouse_y = mouse_max_y / 2;
-    mouse_buttons = 0;
+    device_id = 0;
+    packet_length = MOUSE_PACKET_STANDARD;
+    mouse_try_wheel_mode();
+
+    if (!mouse_send_byte(MOUSE_ENABLE)) return -1;
+
+    max_x = (int32_t)screen_width - 1;
+    max_y = (int32_t)screen_height - 1;
+    current_state.x = max_x / 2;
+    current_state.y = max_y / 2;
+    current_state.buttons = 0;
+    current_state.pressed = 0;
+    current_state.released = 0;
+    current_state.delta_x = 0;
+    current_state.delta_y = 0;
+    current_state.wheel = 0;
+    current_state.packets = 0;
+
     packet_index = 0;
     mouse_generation = 0;
-    mouse_seen_generation = 0;
+    seen_generation = 0;
     mouse_ready = 1;
 
-    /* IRQ12 stays masked until reporting and packet state are ready. */
     interrupts_enable_irq(12);
     return 0;
 }
 
-int mouse_is_ready(void) {
+int mouse_is_ready(void)
+{
     return mouse_ready;
 }
 
-void mouse_irq_handler(void) {
-    uint8_t status = port_byte_in(PS2_STATUS);
-    uint8_t data;
-    int delta_x;
-    int delta_y;
+void mouse_set_bounds(uint32_t screen_width, uint32_t screen_height)
+{
+    uint32_t flags;
 
-    if (!mouse_ready || (status & (PS2_OUTPUT_FULL | PS2_AUX_DATA)) !=
-        (PS2_OUTPUT_FULL | PS2_AUX_DATA)) {
+    if (screen_width == 0 || screen_height == 0 ||
+        screen_width > 0x7FFFFFFFu || screen_height > 0x7FFFFFFFu)
         return;
-    }
 
-    data = port_byte_in(PS2_DATA);
-    if (packet_index == 0) {
-        if ((data & 0x08) == 0) {
-            return;
-        }
-        packet[0] = data;
-        packet_index = 1;
-        return;
-    }
-
-    packet[packet_index++] = data;
-    if (packet_index < 3) {
-        return;
-    }
-    packet_index = 0;
-
-    /* Ignore packets whose motion overflowed the signed byte range. */
-    if (packet[0] & 0xC0) {
-        return;
-    }
-
-    delta_x = (packet[0] & 0x10) ? (int)packet[1] - 256 : packet[1];
-    delta_y = (packet[0] & 0x20) ? (int)packet[2] - 256 : packet[2];
-
-    mouse_x += delta_x;
-    mouse_y -= delta_y;
-    if (mouse_x < 0) {
-        mouse_x = 0;
-    } else if (mouse_x > mouse_max_x) {
-        mouse_x = mouse_max_x;
-    }
-    if (mouse_y < 0) {
-        mouse_y = 0;
-    } else if (mouse_y > mouse_max_y) {
-        mouse_y = mouse_max_y;
-    }
-
-    mouse_buttons = packet[0] & 0x07;
-    mouse_generation++;
+    flags = irq_save();
+    max_x = (int32_t)screen_width - 1;
+    max_y = (int32_t)screen_height - 1;
+    current_state.x = clamp_coordinate(current_state.x, max_x);
+    current_state.y = clamp_coordinate(current_state.y, max_y);
+    irq_restore(flags);
 }
 
-int mouse_poll(struct mouse_state *state) {
+void mouse_set_position(int32_t x, int32_t y)
+{
+    uint32_t flags = irq_save();
+    current_state.x = clamp_coordinate(x, max_x);
+    current_state.y = clamp_coordinate(y, max_y);
+    mouse_generation++;
+    irq_restore(flags);
+}
+
+void mouse_irq_handler(void)
+{
+    /* Drain several pending bytes, but keep interrupt work strictly bounded. */
+    for (uint32_t drained = 0; drained < MOUSE_IRQ_DRAIN_LIMIT; drained++) {
+        uint8_t status = port_byte_in(PS2_STATUS);
+        uint8_t data;
+
+        if ((status & (PS2_OUTPUT_FULL | PS2_AUX_DATA)) !=
+            (PS2_OUTPUT_FULL | PS2_AUX_DATA)) break;
+
+        data = port_byte_in(PS2_DATA);
+        if (!mouse_ready) continue;
+
+        if (packet_index == 0) {
+            /* Bit 3 is always set in a valid first byte. */
+            if ((data & 0x08) == 0) continue;
+            packet[0] = data;
+            packet_index = 1;
+            continue;
+        }
+
+        packet[packet_index++] = data;
+        if (packet_index < packet_length) continue;
+
+        packet_index = 0;
+        publish_packet();
+    }
+}
+
+int mouse_poll(struct mouse_state *state)
+{
+    uint32_t flags;
     uint32_t generation;
 
-    if (!mouse_ready || state == 0) {
+    if (state == 0 || !mouse_ready) return 0;
+
+    flags = irq_save();
+    generation = mouse_generation;
+    if (generation == seen_generation) {
+        irq_restore(flags);
         return 0;
     }
 
-    generation = mouse_generation;
-    if (generation == mouse_seen_generation) {
-        return 0;
-    }
-    state->x = mouse_x;
-    state->y = mouse_y;
-    state->buttons = mouse_buttons;
-    mouse_seen_generation = generation;
+    state->x = current_state.x;
+    state->y = current_state.y;
+    state->buttons = current_state.buttons;
+    state->pressed = current_state.pressed;
+    state->released = current_state.released;
+    state->delta_x = current_state.delta_x;
+    state->delta_y = current_state.delta_y;
+    state->wheel = current_state.wheel;
+    state->packets = current_state.packets;
+
+    /* Event fields accumulate until userspace/kernel code polls them. */
+    current_state.pressed = 0;
+    current_state.released = 0;
+    current_state.delta_x = 0;
+    current_state.delta_y = 0;
+    current_state.wheel = 0;
+    current_state.packets = 0;
+    seen_generation = generation;
+
+    irq_restore(flags);
     return 1;
 }
