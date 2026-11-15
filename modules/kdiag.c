@@ -1205,9 +1205,23 @@ static int kdiag_add_u32(uint32_t left, uint32_t right, uint32_t *result)
 
 static int kdiag_mul_u32(uint32_t left, uint32_t right, uint32_t *result)
 {
-    if (result == 0 || (right != 0 && left > 0xFFFFFFFFu - right))
+    uint32_t product = 0;
+    if (result == 0)
         return -1;
-    *result = left * right;
+    while (right != 0) {
+        if (right & 1u) {
+            if (product > 0xFFFFFFFFu - left)
+                return -1;
+            product += left;
+        }
+        right >>= 1;
+        if (right != 0) {
+            if (left > 0x7FFFFFFFu)
+                return -1;
+            left <<= 1;
+        }
+    }
+    *result = product;
     return 0;
 }
 
