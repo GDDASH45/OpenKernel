@@ -4,9 +4,9 @@
 #include <stdint.h>
 
 /*
- * Read-only ISO9660 support over a primary-channel ATAPI CD-ROM device.
+ * Read-only ISO9660 support over a IDE-channel ATAPI CD-ROM device.
  *
- * iso9660_mount() probes the primary master and slave for an ATAPI device.
+ * iso9660_mount() probes master and slave devices on both IDE channels for an ATAPI device.
  * Paths are absolute and use ISO9660 primary-volume 8-bit identifiers.
  */
 int iso9660_mount(void);
