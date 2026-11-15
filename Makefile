@@ -1,4 +1,3 @@
-
 CC = gcc
 AS = nasm
 AR = ar
@@ -161,12 +160,16 @@ BUILTIN_ARCHIVES = $(C_BUILTIN_ARCHIVES) $(ASM_BUILTIN_ARCHIVES)
 DEPS = $(C_OBJECTS:.o=.d) $(MOD_OBJS:.mo=.d)
 
 .PHONY: all configured-build clean linux run-linux os.iso patch_modules modules \
-	oconf-tools olddefconfig config-build version
+	oconf-tools olddefconfig config-build version mrproper
 
 # Generate .config first, then restart Make so source lists use it.
 all:
 	@$(MAKE) --no-print-directory olddefconfig
 	@$(MAKE) --no-print-directory configured-build
+
+mrproper:
+	@$(MAKE) --no-print-directory clean
+	@rm -rf .config
 
 version:
 	@echo "$(VERSION)"
@@ -213,6 +216,20 @@ $(BUILD_DIR)/asm/%.o: %.asm
 	@mkdir -p $(dir $@)
 	@echo "AS $@"
 	@$(AS) $(ASFLAGS) $< -o $@
+
+# Individual source-path object targets.
+# Example: make lib/ctype.o
+define C_OBJECT_ALIAS
+$(patsubst $(BUILD_DIR)/c/%.o,%.o,$(1)): $(1)
+endef
+
+$(foreach obj,$(C_OBJECTS),$(eval $(call C_OBJECT_ALIAS,$(obj))))
+
+define ASM_OBJECT_ALIAS
+$(patsubst $(BUILD_DIR)/asm/%.o,%.o,$(1)): $(1)
+endef
+
+$(foreach obj,$(ASM_OBJECTS),$(eval $(call ASM_OBJECT_ALIAS,$(obj))))
 
 # Compile loadable module objects.
 $(MOD_DIR)/%.mo: modules/%.c $(VERSION_HEADER)
