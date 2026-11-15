@@ -36,4 +36,4 @@ The kernel reports its actual runtime virtual base and slide after physical-memo
 
 ## Scope and limitations
 
-This implementation randomizes the kernel's virtual base. It does not randomize the fixed physical load location, individual kernel sections, the heap, loadable modules, or user address spaces. The loader currently supports R_386_32 and R_386_PC32 relocations for allocated sections. The kernel continues to use 32-bit paging and 4 MiB identity mappings for non-kernel physical memory.
+This implementation randomizes the kernel's virtual base. It does not randomize the fixed physical load location, individual kernel sections, the heap, loadable modules, or user address spaces. The loader currently supports R_386_32, R_386_PC32, and R_386_PLT32 relocations for allocated sections. The kernel continues to use 32-bit paging and 4 MiB identity mappings for non-kernel physical memory.
