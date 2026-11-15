@@ -3,6 +3,7 @@
 **/*.a
 **/*.bin
 **/*.elf
+**/*.d
 *.img
 build/*
 *.iso
