@@ -2,535 +2,438 @@
 #include <kernel/ata.h>
 #include <stdint.h>
 
-#define FAT_SECTOR_SIZE       512u
-#define FAT_DIRECTORY_SIZE    32u
-#define FAT_NAME_LENGTH       11u
-#define FAT_MAX_COMPONENT     12u
-#define FAT_ATTR_DIRECTORY    0x10u
-#define FAT_ATTR_VOLUME       0x08u
-#define FAT_ATTR_LONG_NAME    0x0Fu
-#define FAT_CLUSTER_EOC       0xFFF8u
-#define FAT_CLUSTER_BAD       0xFFF7u
-#define FAT_CLUSTER_RESERVED  0xFFF0u
-#define FAT_MAX_PATH          256u
+#define FAT_SECTOR_SIZE 512u
+#define FAT_ENTRY_SIZE 32u
+#define FAT_MAX_CLUSTERS 131072u
+#define FAT_MAX_PATH 256u
+#define FAT_ATTR_DIRECTORY 0x10u
+#define FAT_ATTR_VOLUME 0x08u
+#define FAT_ATTR_LFN 0x0Fu
 
-struct fat16_volume {
-    uint32_t partition_lba;
-    uint32_t total_sectors;
-    uint32_t fat_start;
-    uint32_t root_start;
-    uint32_t data_start;
-    uint32_t fat_sectors;
-    uint32_t root_entries;
-    uint32_t root_sectors;
+enum { FAT12 = 12, FAT16 = 16, FAT32 = 32 };
+
+struct fat_volume {
+    uint32_t partition_lba, total_sectors, fat_start, fat_sectors;
+    uint32_t root_start, root_sectors, root_cluster, data_start;
     uint32_t cluster_count;
-    uint16_t sectors_per_cluster;
-    uint16_t reserved_sectors;
-    uint8_t fat_count;
-    uint8_t mounted;
+    uint16_t sectors_per_cluster, root_entries, reserved_sectors;
+    uint8_t fat_count, type, mounted;
 };
 
-struct fat_directory_entry {
+struct fat_entry {
     uint8_t name[11];
     uint8_t attributes;
-    uint8_t reserved[14];
-    uint16_t first_cluster;
-    uint32_t file_size;
+    uint8_t nt_reserved;
+    uint8_t creation[8];
+    uint16_t cluster_high;
+    uint8_t modified[4];
+    uint16_t cluster_low;
+    uint32_t size;
 } __attribute__((packed));
 
-typedef char fat_directory_entry_must_be_32_bytes[
-    sizeof(struct fat_directory_entry) == FAT_DIRECTORY_SIZE ? 1 : -1];
+static struct fat_volume volume;
+static uint8_t sector_buffer[FAT_SECTOR_SIZE];
 
-static struct fat16_volume fat_volume;
-static uint8_t fat_sector[FAT_SECTOR_SIZE];
-
-static uint16_t fat_u16(const uint8_t *data)
+static uint16_t get16(const uint8_t *p)
 {
-    return (uint16_t)data[0] | ((uint16_t)data[1] << 8);
+    return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
 }
 
-static uint32_t fat_u32(const uint8_t *data)
+static uint32_t get32(const uint8_t *p)
 {
-    return (uint32_t)data[0] |
-           ((uint32_t)data[1] << 8) |
-           ((uint32_t)data[2] << 16) |
-           ((uint32_t)data[3] << 24);
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
-static int fat_read_volume_sector(uint32_t sector, void *buffer)
+static void put16(uint8_t *p, uint16_t v)
 {
-    if (!fat_volume.mounted || sector >= fat_volume.total_sectors ||
-        fat_volume.partition_lba > 0xFFFFFFFFu - sector) {
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+}
+
+static void put32(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16);
+    p[3] = (uint8_t)(v >> 24);
+}
+
+static int volume_read(uint32_t lba, void *buffer)
+{
+    if (!volume.mounted || lba >= volume.total_sectors ||
+        volume.partition_lba > 0xFFFFFFFFu - lba)
         return -1;
-    }
-    return ata_read_sector(fat_volume.partition_lba + sector, buffer);
+    return ata_read_sector(volume.partition_lba + lba, buffer);
 }
 
-static int fat_valid_cluster(uint16_t cluster)
+static int volume_write(uint32_t lba, const void *buffer)
 {
-    return cluster >= 2u && cluster < fat_volume.cluster_count + 2u &&
-           cluster < FAT_CLUSTER_RESERVED;
+    if (!volume.mounted || lba >= volume.total_sectors ||
+        volume.partition_lba > 0xFFFFFFFFu - lba)
+        return -1;
+    return ata_write_sector(volume.partition_lba + lba, buffer);
 }
 
-static int fat_next_cluster(uint16_t cluster, uint16_t *next)
+static int valid_cluster(uint32_t cluster)
 {
-    uint32_t byte_offset = (uint32_t)cluster * 2u;
-    uint32_t sector = fat_volume.fat_start + byte_offset / FAT_SECTOR_SIZE;
-    uint32_t offset = byte_offset % FAT_SECTOR_SIZE;
-
-    if (next == 0 || byte_offset / FAT_SECTOR_SIZE >= fat_volume.fat_sectors ||
-        fat_read_volume_sector(sector, fat_sector) != 0) {
-        return -1;
-    }
-
-    *next = fat_u16(&fat_sector[offset]);
-    if (*next >= FAT_CLUSTER_EOC) {
-        return 1;
-    }
-    if (*next == FAT_CLUSTER_BAD || *next < 2u ||
-        *next >= FAT_CLUSTER_RESERVED || !fat_valid_cluster(*next)) {
-        return -1;
-    }
-    return 0;
+    return cluster >= 2 && cluster < volume.cluster_count + 2;
 }
 
-static int fat_read_cluster_sector(uint16_t cluster, uint32_t sector_index,
-                                   void *buffer)
+static int fat_get(uint32_t cluster, uint32_t *value)
 {
-    uint32_t first_sector;
+    uint32_t offset, lba, within;
+    uint8_t pair[2];
+    uint16_t word;
 
-    if (!fat_valid_cluster(cluster) ||
-        sector_index >= fat_volume.sectors_per_cluster) {
+    if (!valid_cluster(cluster) || value == 0)
         return -1;
-    }
 
-    first_sector = fat_volume.data_start +
-                   ((uint32_t)cluster - 2u) *
-                       fat_volume.sectors_per_cluster;
-    return fat_read_volume_sector(first_sector + sector_index, buffer);
-}
-
-static int fat_make_short_name(const char *component, uint8_t name[11])
-{
-    uint32_t input = 0;
-    uint32_t output = 0;
-    int extension = 0;
-
-    if (component == 0 || component[0] == '\0') {
-        return -1;
-    }
-
-    for (uint32_t index = 0; index < FAT_NAME_LENGTH; index++) {
-        name[index] = ' ';
-    }
-
-    while (component[input] != '\0') {
-        char character = component[input++];
-
-        if (character == '.') {
-            if (extension || output == 0 || output > 8) {
+    if (volume.type == FAT12) {
+        offset = cluster + cluster / 2;
+        lba = volume.fat_start + offset / FAT_SECTOR_SIZE;
+        within = offset % FAT_SECTOR_SIZE;
+        if (volume_read(lba, sector_buffer) != 0)
+            return -1;
+        pair[0] = sector_buffer[within];
+        if (within == FAT_SECTOR_SIZE - 1) {
+            if (volume_read(lba + 1, sector_buffer) != 0)
                 return -1;
-            }
-            extension = 1;
-            output = 8;
-            continue;
+            pair[1] = sector_buffer[0];
+        } else {
+            pair[1] = sector_buffer[within + 1];
         }
-
-        if (character == '/' || character == '\\' ||
-            character == ' ' || character < 0x21 || character > 0x7E ||
-            character == '*' || character == '?' || character == ':' ||
-            character == '"' || character == '<' || character == '>' ||
-            character == '|') {
-            return -1;
-        }
-
-        if (character >= 'a' && character <= 'z') {
-            character = (char)(character - 'a' + 'A');
-        }
-
-        if ((!extension && output >= 8) || (extension && output >= 11)) {
-            return -1;
-        }
-        name[output++] = (uint8_t)character;
-    }
-
-    return 0;
-}
-
-static int fat_entry_matches(const struct fat_directory_entry *entry,
-                             const uint8_t name[11])
-{
-    for (uint32_t index = 0; index < FAT_NAME_LENGTH; index++) {
-        if (entry->name[index] != name[index]) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-static int fat_find_in_sector(uint32_t sector, const uint8_t name[11],
-                              struct fat_directory_entry *result,
-                              int *finished)
-{
-    if (fat_read_volume_sector(sector, fat_sector) != 0) {
-        return -1;
-    }
-
-    for (uint32_t offset = 0; offset < FAT_SECTOR_SIZE;
-         offset += FAT_DIRECTORY_SIZE) {
-        struct fat_directory_entry *entry =
-            (struct fat_directory_entry *)&fat_sector[offset];
-
-        if (entry->name[0] == 0x00) {
-            *finished = 1;
-            return 0;
-        }
-        if (entry->name[0] == 0xE5 ||
-            entry->attributes == FAT_ATTR_LONG_NAME ||
-            (entry->attributes & FAT_ATTR_VOLUME)) {
-            continue;
-        }
-        if (fat_entry_matches(entry, name)) {
-            *result = *entry;
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int fat_find_entry(uint16_t directory_cluster, int root_directory,
-                          const uint8_t name[11],
-                          struct fat_directory_entry *result)
-{
-    int finished = 0;
-
-    if (root_directory) {
-        uint32_t entries_seen = 0;
-
-        for (uint32_t sector = 0; sector < fat_volume.root_sectors; sector++) {
-            uint32_t absolute = fat_volume.root_start + sector;
-            int found = fat_find_in_sector(absolute, name, result, &finished);
-
-            if (found != 0 || finished) {
-                return found;
-            }
-            entries_seen += FAT_SECTOR_SIZE / FAT_DIRECTORY_SIZE;
-            if (entries_seen >= fat_volume.root_entries) {
-                break;
-            }
-        }
+        word = get16(pair);
+        *value = (cluster & 1) ? (word >> 4) : (word & 0x0FFF);
         return 0;
     }
 
-    if (!fat_valid_cluster(directory_cluster)) {
+    offset = cluster * (volume.type == FAT16 ? 2u : 4u);
+    if (offset / FAT_SECTOR_SIZE >= volume.fat_sectors)
         return -1;
-    }
+    if (volume_read(volume.fat_start + offset / FAT_SECTOR_SIZE,
+                    sector_buffer) != 0)
+        return -1;
+    within = offset % FAT_SECTOR_SIZE;
+    *value = volume.type == FAT16 ? get16(&sector_buffer[within]) :
+             (get32(&sector_buffer[within]) & 0x0FFFFFFF);
+    return 0;
+}
 
-    for (uint32_t chain_count = 0;
-         chain_count < fat_volume.cluster_count; chain_count++) {
-        for (uint32_t sector = 0;
-             sector < fat_volume.sectors_per_cluster; sector++) {
-            uint32_t first_sector =
-                fat_volume.data_start +
-                ((uint32_t)directory_cluster - 2u) *
-                    fat_volume.sectors_per_cluster;
-            int found = fat_find_in_sector(first_sector + sector, name,
-                                           result, &finished);
+static int fat_eoc(uint32_t value)
+{
+    if (volume.type == FAT12) return value >= 0x0FF8;
+    if (volume.type == FAT16) return value >= 0xFFF8;
+    return value >= 0x0FFFFFF8;
+}
 
-            if (found != 0 || finished) {
-                return found;
-            }
+static int fat_next(uint32_t cluster, uint32_t *next)
+{
+    uint32_t value;
+    if (fat_get(cluster, &value) != 0)
+        return -1;
+    if (fat_eoc(value))
+        return 1;
+    if (!valid_cluster(value))
+        return -1;
+    *next = value;
+    return 0;
+}
+
+static uint32_t entry_cluster(const struct fat_entry *entry)
+{
+    return ((uint32_t)entry->cluster_high << 16) | entry->cluster_low;
+}
+
+static int make_name(const char *component, uint8_t name[11])
+{
+    uint32_t i = 0, out = 0;
+    int extension = 0;
+
+    if (!component || !component[0])
+        return -1;
+    for (i = 0; i < 11; ++i) name[i] = ' ';
+    i = 0;
+    while (component[i]) {
+        char c = component[i++];
+        if (c == '.') {
+            if (extension || out == 0 || out > 8) return -1;
+            extension = 1;
+            out = 8;
+            continue;
         }
-
-        uint16_t next;
-        int status = fat_next_cluster(directory_cluster, &next);
-        if (status == 1) {
-            return 0;
-        }
-        if (status != 0) {
+        if (c <= 0x20 || c > 0x7E || c == '/' || c == '\\' ||
+            c == '*' || c == '?' || c == ':' || c == '"' ||
+            c == '<' || c == '>' || c == '|')
             return -1;
-        }
-        directory_cluster = next;
+        if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+        if ((!extension && out >= 8) || (extension && out >= 11))
+            return -1;
+        name[out++] = (uint8_t)c;
     }
+    return 0;
+}
 
+static int find_in_sector(uint32_t lba, const uint8_t name[11],
+                          struct fat_entry *found, int *end)
+{
+    if (volume_read(lba, sector_buffer) != 0) return -1;
+    for (uint32_t off = 0; off < FAT_SECTOR_SIZE; off += FAT_ENTRY_SIZE) {
+        struct fat_entry *e = (struct fat_entry *)&sector_buffer[off];
+        if (e->name[0] == 0) { *end = 1; return 0; }
+        if (e->name[0] == 0xE5 || e->attributes == FAT_ATTR_LFN ||
+            (e->attributes & FAT_ATTR_VOLUME))
+            continue;
+        uint32_t i;
+        for (i = 0; i < 11 && e->name[i] == name[i]; ++i) {}
+        if (i == 11) { *found = *e; return 1; }
+    }
+    return 0;
+}
+
+static int find_entry(uint32_t directory, int fixed_root,
+                      const uint8_t name[11], struct fat_entry *found)
+{
+    int end = 0;
+    if (fixed_root) {
+        for (uint32_t i = 0; i < volume.root_sectors; ++i) {
+            int r = find_in_sector(volume.root_start + i, name, found, &end);
+            if (r || end) return r;
+        }
+        return 0;
+    }
+    for (uint32_t count = 0; count < volume.cluster_count; ++count) {
+        uint32_t first = volume.data_start +
+            (directory - 2) * volume.sectors_per_cluster;
+        for (uint32_t s = 0; s < volume.sectors_per_cluster; ++s) {
+            int r = find_in_sector(first + s, name, found, &end);
+            if (r || end) return r;
+        }
+        uint32_t next;
+        int r = fat_next(directory, &next);
+        if (r == 1) return 0;
+        if (r != 0) return -1;
+        directory = next;
+    }
     return -1;
 }
 
-static int fat_resolve(const char *path, struct fat_directory_entry *entry,
-                       int *is_root)
+static int resolve(const char *path, struct fat_entry *entry, int *root)
 {
-    uint16_t directory_cluster = 0;
-    int root_directory = 1;
-    uint32_t position = 0;
-    char component[FAT_MAX_COMPONENT + 1];
+    uint32_t pos = 0, directory = volume.root_cluster;
+    int fixed_root = volume.type != FAT32;
+    char component[13];
 
-    if (path == 0 || path[0] != '/') {
-        return -1;
-    }
-
-    while (path[position] == '/') {
-        position++;
-    }
-    if (path[position] == '\0') {
-        if (is_root != 0) {
-            *is_root = 1;
-        }
-        return 0;
-    }
+    if (!path || path[0] != '/') return -1;
+    while (path[pos] == '/') ++pos;
+    if (!path[pos]) { if (root) *root = 1; return 0; }
 
     for (;;) {
-        uint32_t length = 0;
-        uint8_t short_name[11];
-        struct fat_directory_entry found;
-
-        while (path[position] != '\0' && path[position] != '/') {
-            if (length >= FAT_MAX_COMPONENT) {
-                return -1;
-            }
-            component[length++] = path[position++];
+        uint32_t n = 0;
+        uint8_t name[11];
+        struct fat_entry e;
+        while (path[pos] && path[pos] != '/') {
+            if (n >= 12) return -1;
+            component[n++] = path[pos++];
         }
-        component[length] = '\0';
-
-        if (fat_make_short_name(component, short_name) != 0 ||
-            fat_find_entry(directory_cluster, root_directory,
-                           short_name, &found) != 1) {
+        component[n] = 0;
+        if (make_name(component, name) != 0 ||
+            find_entry(directory, fixed_root, name, &e) != 1)
             return -1;
-        }
-
-        while (path[position] == '/') {
-            position++;
-        }
-        if (path[position] == '\0') {
-            if (entry != 0) {
-                *entry = found;
-            }
-            if (is_root != 0) {
-                *is_root = 0;
-            }
+        while (path[pos] == '/') ++pos;
+        if (!path[pos]) {
+            if (entry) *entry = e;
+            if (root) *root = 0;
             return 0;
         }
-
-        if (!(found.attributes & FAT_ATTR_DIRECTORY) ||
-            !fat_valid_cluster(found.first_cluster)) {
+        if (!(e.attributes & FAT_ATTR_DIRECTORY) ||
+            !valid_cluster(entry_cluster(&e)))
             return -1;
-        }
-        directory_cluster = found.first_cluster;
-        root_directory = 0;
+        directory = entry_cluster(&e);
+        fixed_root = 0;
     }
+}
+
+static int data_sector(uint32_t cluster, uint32_t index, uint32_t *lba)
+{
+    if (!valid_cluster(cluster) || index >= volume.sectors_per_cluster)
+        return -1;
+    *lba = volume.data_start + (cluster - 2) *
+           volume.sectors_per_cluster + index;
+    return 0;
 }
 
 int fat_mount(uint32_t partition_lba)
 {
-    uint8_t boot_sector[FAT_SECTOR_SIZE];
-    uint16_t bytes_per_sector;
-    uint16_t sectors_per_fat;
-    uint32_t total_sectors;
-    uint32_t root_sectors;
-    uint32_t data_sectors;
-    uint32_t cluster_count;
+    uint8_t b[512];
+    uint32_t total, fat_size, root_sectors, data_sectors, clusters;
+    uint16_t bytes, root_entries;
 
-    fat_volume.mounted = 0;
-
-    if (ata_read_sector(partition_lba, boot_sector) != 0 ||
-        boot_sector[510] != 0x55 || boot_sector[511] != 0xAA) {
+    volume.mounted = 0;
+    if (ata_read_sector(partition_lba, b) != 0 ||
+        b[510] != 0x55 || b[511] != 0xAA)
         return -1;
-    }
 
-    bytes_per_sector = fat_u16(&boot_sector[11]);
-    fat_volume.sectors_per_cluster = boot_sector[13];
-    fat_volume.reserved_sectors = fat_u16(&boot_sector[14]);
-    fat_volume.fat_count = boot_sector[16];
-    fat_volume.root_entries = fat_u16(&boot_sector[17]);
-    total_sectors = fat_u16(&boot_sector[19]);
-    if (total_sectors == 0) {
-        total_sectors = fat_u32(&boot_sector[32]);
-    }
-    sectors_per_fat = fat_u16(&boot_sector[22]);
+    bytes = get16(&b[11]);
+    volume.sectors_per_cluster = b[13];
+    volume.reserved_sectors = get16(&b[14]);
+    volume.fat_count = b[16];
+    root_entries = get16(&b[17]);
+    total = get16(&b[19]);
+    if (!total) total = get32(&b[32]);
+    fat_size = get16(&b[22]);
+    if (!fat_size) fat_size = get32(&b[36]);
 
-    if (bytes_per_sector != FAT_SECTOR_SIZE ||
-        fat_volume.sectors_per_cluster == 0 ||
-        (fat_volume.sectors_per_cluster &
-         (fat_volume.sectors_per_cluster - 1u)) != 0 ||
-        fat_volume.sectors_per_cluster > 128u ||
-        fat_volume.reserved_sectors == 0 ||
-        fat_volume.fat_count == 0 || fat_volume.fat_count > 2 ||
-        fat_volume.root_entries == 0 || sectors_per_fat == 0 ||
-        total_sectors == 0) {
+    if (bytes != 512 || !volume.sectors_per_cluster ||
+        (volume.sectors_per_cluster & (volume.sectors_per_cluster - 1)) ||
+        volume.sectors_per_cluster > 128 || !volume.reserved_sectors ||
+        !volume.fat_count || volume.fat_count > 2 || !fat_size || !total)
         return -1;
-    }
 
-    root_sectors =
-        ((uint32_t)fat_volume.root_entries * FAT_DIRECTORY_SIZE +
-         (FAT_SECTOR_SIZE - 1u)) / FAT_SECTOR_SIZE;
-
-    if (fat_volume.reserved_sectors >
-            0xFFFFFFFFu - (uint32_t)fat_volume.fat_count * sectors_per_fat ||
-        (uint32_t)fat_volume.reserved_sectors +
-                (uint32_t)fat_volume.fat_count * sectors_per_fat >
-            0xFFFFFFFFu - root_sectors) {
+    root_sectors = ((uint32_t)root_entries * 32 + 511) / 512;
+    if ((uint32_t)volume.reserved_sectors +
+        (uint32_t)volume.fat_count * fat_size + root_sectors >= total)
         return -1;
-    }
-
-    data_sectors = total_sectors -
-        ((uint32_t)fat_volume.reserved_sectors +
-         (uint32_t)fat_volume.fat_count * sectors_per_fat +
-         root_sectors);
-    if (total_sectors <=
-        (uint32_t)fat_volume.reserved_sectors +
-        (uint32_t)fat_volume.fat_count * sectors_per_fat + root_sectors) {
+    data_sectors = total - volume.reserved_sectors -
+                   (uint32_t)volume.fat_count * fat_size - root_sectors;
+    clusters = data_sectors / volume.sectors_per_cluster;
+    if (clusters < 1 || clusters >= FAT_MAX_CLUSTERS ||
+        partition_lba > 0xFFFFFFFFu - total)
         return -1;
-    }
 
-    cluster_count = data_sectors / fat_volume.sectors_per_cluster;
-
-    /* FAT16 volumes contain 4,085 through 65,524 data clusters. */
-    if (cluster_count < 4085u || cluster_count >= 65525u ||
-        partition_lba > 0xFFFFFFFFu - total_sectors) {
+    volume.type = clusters < 4085 ? FAT12 :
+                  (clusters < 65525 ? FAT16 : FAT32);
+    if ((volume.type == FAT32 && root_entries != 0) ||
+        (volume.type != FAT32 && root_entries == 0))
         return -1;
-    }
 
-    fat_volume.partition_lba = partition_lba;
-    fat_volume.total_sectors = total_sectors;
-    fat_volume.fat_start = fat_volume.reserved_sectors;
-    fat_volume.fat_sectors = sectors_per_fat;
-    fat_volume.root_start = fat_volume.fat_start +
-                            (uint32_t)fat_volume.fat_count * sectors_per_fat;
-    fat_volume.root_sectors = root_sectors;
-    fat_volume.data_start = fat_volume.root_start + root_sectors;
-    fat_volume.cluster_count = cluster_count;
+    volume.partition_lba = partition_lba;
+    volume.total_sectors = total;
+    volume.fat_start = volume.reserved_sectors;
+    volume.fat_sectors = fat_size;
+    volume.root_entries = root_entries;
+    volume.root_sectors = root_sectors;
+    volume.root_start = volume.fat_start + volume.fat_count * fat_size;
+    volume.data_start = volume.root_start + root_sectors;
+    volume.cluster_count = clusters;
+    volume.root_cluster = volume.type == FAT32 ?
+                          (get32(&b[44]) & 0x0FFFFFFF) : 0;
 
-    if ((cluster_count + 2u) * 2u >
-        fat_volume.fat_sectors * FAT_SECTOR_SIZE) {
+    if (volume.type == FAT32 && !valid_cluster(volume.root_cluster))
         return -1;
-    }
+    if (volume.type == FAT12 &&
+        ((clusters + 2) * 3 / 2 + 1) > fat_size * 512)
+        return -1;
+    if (volume.type == FAT16 && (clusters + 2) * 2 > fat_size * 512)
+        return -1;
+    if (volume.type == FAT32 && (clusters + 2) * 4 > fat_size * 512)
+        return -1;
 
-    fat_volume.mounted = 1;
+    volume.mounted = 1;
     return 0;
 }
 
-int fat_is_mounted(void)
-{
-    return fat_volume.mounted != 0;
-}
+int fat_is_mounted(void) { return volume.mounted != 0; }
 
 int fat_read_file(const char *path, void *buffer, uint32_t capacity)
 {
-    struct fat_directory_entry entry;
-    uint32_t copied = 0;
-    uint16_t cluster;
-    int is_root;
-
-    if (!fat_volume.mounted || buffer == 0 ||
-        fat_resolve(path, &entry, &is_root) != 0 || is_root ||
-        (entry.attributes & FAT_ATTR_DIRECTORY)) {
+    struct fat_entry e;
+    uint32_t cluster, copied = 0;
+    int root;
+    if (!volume.mounted || !buffer || resolve(path, &e, &root) ||
+        root || (e.attributes & FAT_ATTR_DIRECTORY))
         return -1;
-    }
-    if (entry.file_size > capacity) {
-        return -22;
-    }
-    if (entry.file_size > 0x7FFFFFFFu) {
-        return -1;
-    }
-    if (entry.file_size == 0) {
-        return 0;
-    }
-    if (!fat_valid_cluster(entry.first_cluster)) {
-        return -1;
-    }
+    if (e.size > capacity) return -22;
+    if (!e.size) return 0;
+    cluster = entry_cluster(&e);
+    if (!valid_cluster(cluster)) return -1;
 
-    cluster = entry.first_cluster;
-    while (copied < entry.file_size) {
-        for (uint32_t sector = 0;
-             sector < fat_volume.sectors_per_cluster &&
-             copied < entry.file_size; sector++) {
-            uint32_t amount = entry.file_size - copied;
-
-            if (amount > FAT_SECTOR_SIZE) {
-                amount = FAT_SECTOR_SIZE;
-            }
-            if (fat_read_cluster_sector(cluster, sector, fat_sector) != 0) {
-                return -1;
-            }
-            for (uint32_t byte = 0; byte < amount; byte++) {
-                ((uint8_t *)buffer)[copied + byte] = fat_sector[byte];
-            }
+    while (copied < e.size) {
+        for (uint32_t s = 0; s < volume.sectors_per_cluster &&
+             copied < e.size; ++s) {
+            uint32_t lba, amount = e.size - copied;
+            if (amount > 512) amount = 512;
+            if (data_sector(cluster, s, &lba) ||
+                volume_read(lba, sector_buffer)) return -1;
+            for (uint32_t i = 0; i < amount; ++i)
+                ((uint8_t *)buffer)[copied + i] = sector_buffer[i];
             copied += amount;
         }
-
-        if (copied < entry.file_size) {
-            uint16_t next;
-            if (fat_next_cluster(cluster, &next) != 0) {
-                return -1;
-            }
+        if (copied < e.size) {
+            uint32_t next;
+            if (fat_next(cluster, &next)) return -1;
             cluster = next;
         }
     }
-
     return (int)copied;
 }
 
-static uint32_t fat_format_name(const struct fat_directory_entry *entry,
-                                char *buffer, uint32_t capacity)
+/* Overwrite an existing file without changing its allocated size. */
+int fat_write_file(const char *path, const void *buffer, uint32_t size)
 {
-    uint32_t used = 0;
-    uint32_t base_length = 8;
-    uint32_t extension_length = 3;
+    struct fat_entry e;
+    uint32_t cluster, copied = 0;
+    int root;
+    if (!volume.mounted || (!buffer && size) ||
+        resolve(path, &e, &root) || root ||
+        (e.attributes & FAT_ATTR_DIRECTORY) || size != e.size)
+        return -1;
+    if (!size) return 0;
+    cluster = entry_cluster(&e);
+    if (!valid_cluster(cluster)) return -1;
 
-    while (base_length != 0 && entry->name[base_length - 1] == ' ') {
-        base_length--;
-    }
-    while (extension_length != 0 &&
-           entry->name[8 + extension_length - 1] == ' ') {
-        extension_length--;
-    }
-
-    for (uint32_t index = 0; index < base_length && used < capacity; index++) {
-        buffer[used++] = (char)entry->name[index];
-    }
-    if (extension_length != 0 && used < capacity) {
-        buffer[used++] = '.';
-        for (uint32_t index = 0;
-             index < extension_length && used < capacity; index++) {
-            buffer[used++] = (char)entry->name[8 + index];
+    while (copied < size) {
+        for (uint32_t s = 0; s < volume.sectors_per_cluster &&
+             copied < size; ++s) {
+            uint32_t lba, amount = size - copied;
+            if (amount > 512) amount = 512;
+            if (data_sector(cluster, s, &lba) ||
+                volume_read(lba, sector_buffer)) return -1;
+            for (uint32_t i = 0; i < amount; ++i)
+                sector_buffer[i] = ((const uint8_t *)buffer)[copied + i];
+            if (volume_write(lba, sector_buffer)) return -1;
+            copied += amount;
+        }
+        if (copied < size) {
+            uint32_t next;
+            if (fat_next(cluster, &next)) return -1;
+            cluster = next;
         }
     }
-    if ((entry->attributes & FAT_ATTR_DIRECTORY) && used < capacity) {
-        buffer[used++] = '/';
-    }
+    return (int)copied;
+}
 
+static uint32_t format_name(const struct fat_entry *e, char *out,
+                            uint32_t capacity)
+{
+    uint32_t base = 8, ext = 3, used = 0;
+    while (base && e->name[base - 1] == ' ') --base;
+    while (ext && e->name[8 + ext - 1] == ' ') --ext;
+    for (uint32_t i = 0; i < base && used < capacity; ++i)
+        out[used++] = (char)e->name[i];
+    if (ext && used < capacity) {
+        out[used++] = '.';
+        for (uint32_t i = 0; i < ext && used < capacity; ++i)
+            out[used++] = (char)e->name[8 + i];
+    }
+    if ((e->attributes & FAT_ATTR_DIRECTORY) && used < capacity)
+        out[used++] = '/';
     return used;
 }
 
-static int fat_list_sector(uint32_t sector, char *buffer,
-                           uint32_t capacity, uint32_t *used,
-                           int *finished)
+static int list_sector(uint32_t lba, char *buffer, uint32_t capacity,
+                       uint32_t *used, int *end)
 {
-    if (fat_read_volume_sector(sector, fat_sector) != 0) {
-        return -1;
-    }
-
-    for (uint32_t offset = 0; offset < FAT_SECTOR_SIZE;
-         offset += FAT_DIRECTORY_SIZE) {
-        struct fat_directory_entry *entry =
-            (struct fat_directory_entry *)&fat_sector[offset];
-        uint32_t amount;
-
-        if (entry->name[0] == 0x00) {
-            *finished = 1;
-            return 0;
-        }
-        if (entry->name[0] == 0xE5 ||
-            entry->attributes == FAT_ATTR_LONG_NAME ||
-            (entry->attributes & FAT_ATTR_VOLUME)) {
-            continue;
-        }
-
-        amount = fat_format_name(entry, buffer + *used,
-                                 capacity - *used);
-        if (amount == 0 || amount + 1u > capacity - *used) {
-            return -22;
-        }
-        *used += amount;
+    if (volume_read(lba, sector_buffer)) return -1;
+    for (uint32_t off = 0; off < 512; off += 32) {
+        struct fat_entry *e = (struct fat_entry *)&sector_buffer[off];
+        uint32_t n;
+        if (!e->name[0]) { *end = 1; return 0; }
+        if (e->name[0] == 0xE5 || e->attributes == FAT_ATTR_LFN ||
+            (e->attributes & FAT_ATTR_VOLUME)) continue;
+        n = format_name(e, buffer + *used, capacity - *used);
+        if (!n || n + 1 > capacity - *used) return -22;
+        *used += n;
         buffer[(*used)++] = '\n';
     }
     return 0;
@@ -538,67 +441,36 @@ static int fat_list_sector(uint32_t sector, char *buffer,
 
 int fat_list_directory(const char *path, char *buffer, uint32_t capacity)
 {
-    struct fat_directory_entry entry;
-    uint16_t cluster = 0;
-    uint32_t used = 0;
-    int root_directory;
-    int finished = 0;
+    struct fat_entry e;
+    uint32_t cluster, used = 0;
+    int root, end = 0, fixed;
+    if (!volume.mounted || !buffer || !capacity ||
+        resolve(path, &e, &root)) return -1;
+    fixed = root && volume.type != FAT32;
+    cluster = root ? volume.root_cluster : entry_cluster(&e);
+    if (!root && (!(e.attributes & FAT_ATTR_DIRECTORY) ||
+                  !valid_cluster(cluster))) return -1;
 
-    if (!fat_volume.mounted || buffer == 0 || capacity == 0 ||
-        fat_resolve(path, &entry, &root_directory) != 0) {
-        return -1;
-    }
-
-    if (!root_directory) {
-        if (!(entry.attributes & FAT_ATTR_DIRECTORY) ||
-            !fat_valid_cluster(entry.first_cluster)) {
-            return -1;
-        }
-        cluster = entry.first_cluster;
-    }
-
-    if (root_directory) {
-        uint32_t entries_seen = 0;
-
-        for (uint32_t sector = 0; sector < fat_volume.root_sectors; sector++) {
-            int status = fat_list_sector(fat_volume.root_start + sector,
-                                         buffer, capacity, &used, &finished);
-            if (status != 0 || finished) {
-                return status != 0 ? status : (int)used;
-            }
-            entries_seen += FAT_SECTOR_SIZE / FAT_DIRECTORY_SIZE;
-            if (entries_seen >= fat_volume.root_entries) {
-                break;
-            }
+    if (fixed) {
+        for (uint32_t s = 0; s < volume.root_sectors; ++s) {
+            int r = list_sector(volume.root_start + s, buffer, capacity,
+                                &used, &end);
+            if (r || end) return r ? r : (int)used;
         }
         return (int)used;
     }
-
-    for (uint32_t chain_count = 0;
-         chain_count < fat_volume.cluster_count; chain_count++) {
-        for (uint32_t sector = 0;
-             sector < fat_volume.sectors_per_cluster; sector++) {
-            uint32_t first_sector =
-                fat_volume.data_start +
-                ((uint32_t)cluster - 2u) *
-                    fat_volume.sectors_per_cluster;
-            int status = fat_list_sector(first_sector + sector, buffer,
-                                         capacity, &used, &finished);
-            if (status != 0 || finished) {
-                return status != 0 ? status : (int)used;
-            }
+    for (uint32_t count = 0; count < volume.cluster_count; ++count) {
+        uint32_t first = volume.data_start +
+                         (cluster - 2) * volume.sectors_per_cluster;
+        for (uint32_t s = 0; s < volume.sectors_per_cluster; ++s) {
+            int r = list_sector(first + s, buffer, capacity, &used, &end);
+            if (r || end) return r ? r : (int)used;
         }
-
-        uint16_t next;
-        int status = fat_next_cluster(cluster, &next);
-        if (status == 1) {
-            return (int)used;
-        }
-        if (status != 0) {
-            return -1;
-        }
+        uint32_t next;
+        int r = fat_next(cluster, &next);
+        if (r == 1) return (int)used;
+        if (r) return -1;
         cluster = next;
     }
-
     return -1;
 }
