@@ -429,15 +429,11 @@ olddefconfig: $(OCONF_PARSER)
 config-build: olddefconfig $(OCONF_BUILDER)
 	@./$(OCONF_BUILDER) .
 
-# Report module sources.
+
+# Report module sources. (DEPRECATED)
+# Let People know its going away
 patch_modules:
-	@mkdir -p $(MOD_DIR)
-	@echo "Checking modules in modules/..."
-	@if [ -z "$(MOD_SOURCES)" ]; then \
-		echo "No modules found in modules/."; \
-	else \
-		echo "Found module sources: $(MOD_SOURCES)"; \
-	fi
+	@echo "Target patch_modules is deprecated and going away soon!"
 
 # Remove generated build products.
 clean:
