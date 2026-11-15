@@ -6,6 +6,8 @@ It boots under GRUB/Multiboot, indexes a USTAR initramfs, and provides a small
 set of kernel and userspace interfaces. It is not currently a protected
 microkernel: loaded programs execute at kernel privilege in shared memory.
 
+OpenKernel is to eventually be a Monolithic kernel
+
 ## Documentation
 
 The [feature documentation index](documenetation/index.md) covers the
