@@ -17,11 +17,30 @@
 #define PATH_SIZE   4096
 #define LINE_SIZE   4096
 
-static int enabled(const char *symbol)
+#define CONFIG_HASH_SIZE 1021
+
+struct config_symbol {
+    char *name;
+    struct config_symbol *next;
+};
+
+static struct config_symbol *config_symbols[CONFIG_HASH_SIZE];
+
+static unsigned long config_hash(const char *name)
+{
+    unsigned long hash = 5381;
+
+    while (*name)
+        hash = ((hash << 5) + hash) ^ (unsigned char)*name++;
+
+    return hash % CONFIG_HASH_SIZE;
+}
+
+/* Read .config once instead of reopening it for every SOURCE entry. */
+static int load_config(void)
 {
     FILE *file = fopen(CONFIG_FILE, "r");
     char line[LINE_SIZE];
-    int result = 0;
 
     if (!file) {
         perror(CONFIG_FILE);
@@ -30,25 +49,88 @@ static int enabled(const char *symbol)
 
     while (fgets(line, sizeof(line), file)) {
         size_t len = strlen(line);
+        char *equals;
+        unsigned long bucket;
+        struct config_symbol *entry;
 
         while (len > 0 &&
-               (line[len - 1] == '\n' ||
-                line[len - 1] == '\r' ||
-                line[len - 1] == ' ' ||
-                line[len - 1] == '\t')) {
+               (line[len - 1] == '\n' || line[len - 1] == '\r' ||
+                line[len - 1] == ' ' || line[len - 1] == '\t'))
             line[--len] = '\0';
+
+        equals = strchr(line, '=');
+        if (!equals || strcmp(equals + 1, "y") != 0)
+            continue;
+
+        *equals = '\0';
+        if (strncmp(line, "CONFIG_", 7) != 0)
+            continue;
+
+        bucket = config_hash(line);
+        for (entry = config_symbols[bucket]; entry; entry = entry->next) {
+            if (strcmp(entry->name, line) == 0)
+                break;
+        }
+        if (entry)
+            continue;
+
+        entry = malloc(sizeof(*entry));
+        if (!entry) {
+            fprintf(stderr, "oconf: out of memory while reading %s\n", CONFIG_FILE);
+            fclose(file);
+            return -1;
         }
 
-        if (strncmp(line, symbol, strlen(symbol)) == 0 &&
-            line[strlen(symbol)] == '=' &&
-            strcmp(line + strlen(symbol) + 1, "y") == 0) {
-            result = 1;
-            break;
+        entry->name = strdup(line);
+        if (!entry->name) {
+            free(entry);
+            fprintf(stderr, "oconf: out of memory while reading %s\n", CONFIG_FILE);
+            fclose(file);
+            return -1;
         }
+
+        entry->next = config_symbols[bucket];
+        config_symbols[bucket] = entry;
+    }
+
+    if (ferror(file)) {
+        perror(CONFIG_FILE);
+        fclose(file);
+        return -1;
     }
 
     fclose(file);
-    return result;
+    return 0;
+}
+
+static void free_config(void)
+{
+    size_t i;
+
+    for (i = 0; i < CONFIG_HASH_SIZE; i++) {
+        struct config_symbol *entry = config_symbols[i];
+
+        while (entry) {
+            struct config_symbol *next = entry->next;
+            free(entry->name);
+            free(entry);
+            entry = next;
+        }
+        config_symbols[i] = NULL;
+    }
+}
+
+static int enabled(const char *symbol)
+{
+    struct config_symbol *entry;
+
+    for (entry = config_symbols[config_hash(symbol)];
+         entry; entry = entry->next) {
+        if (strcmp(entry->name, symbol) == 0)
+            return 1;
+    }
+
+    return 0;
 }
 
 static int make_directories(const char *path)
@@ -416,18 +498,17 @@ int main(int argc, char **argv)
     if (argc == 2)
         root = argv[1];
 
-    if (access(CONFIG_FILE, R_OK) != 0) {
-        fprintf(stderr,
-                "oconf: cannot read %s from the current directory\n",
-                CONFIG_FILE);
+    if (load_config() != 0)
         return EXIT_FAILURE;
-    }
 
     printf("oconf: scanning %s for .Ocfg files\n", root);
 
-    if (scan_directory(root) != 0)
+    if (scan_directory(root) != 0) {
+        free_config();
         return EXIT_FAILURE;
+    }
 
+    free_config();
     printf("oconf: configuration build complete\n");
     return EXIT_SUCCESS;
 }
