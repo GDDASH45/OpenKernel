@@ -62,3 +62,16 @@ The kernel looks up `init=PATH` directly in the initramfs TAR by entry name.
 The configured entry may be a supported text init script or a recognized
 program image. See [Initramfs and init scripts](initramfs.md) and
 [Programs and processes](processes.md).
+
+## Real hardware
+
+The initial real-machine target is a legacy BIOS x86 PC booted through GRUB
+Multiboot 1. The loader now checks for CPUID and PSE before continuing because
+early paging requires 4 MiB pages. The kernel also enumerates PCI functions
+through legacy PCI configuration mechanism #1. This is inventory only; it does
+not mean that every listed device has a driver.
+
+UEFI-native boot, GOP, APIC/IOAPIC, SMP, USB, AHCI, NVMe, general PCI resource
+allocation, and broad physical-machine testing remain future work. See
+[Real-hardware boot readiness](real-hardware.md) for requirements and a safe
+bring-up procedure.

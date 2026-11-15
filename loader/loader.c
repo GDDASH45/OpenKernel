@@ -1079,6 +1079,37 @@ static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
     return 0;
 }
 
+static int loader_cpu_has_pse(void)
+{
+    uint32_t original_flags;
+    uint32_t toggled_flags;
+    uint32_t observed_flags;
+    uint32_t eax;
+    uint32_t ebx;
+    uint32_t ecx;
+    uint32_t edx;
+
+    __asm__ volatile ("pushfl; popl %0" : "=r"(original_flags));
+    toggled_flags = original_flags ^ 0x00200000u;
+    __asm__ volatile ("pushl %0; popfl" : : "r"(toggled_flags) : "cc");
+    __asm__ volatile ("pushfl; popl %0" : "=r"(observed_flags));
+    __asm__ volatile ("pushl %0; popfl" : : "r"(original_flags) : "cc");
+
+    if (((observed_flags ^ original_flags) & 0x00200000u) == 0)
+        return 0;
+
+    eax = 0;
+    __asm__ volatile ("cpuid"
+                      : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
+    if (eax < 1u)
+        return 0;
+
+    eax = 1;
+    __asm__ volatile ("cpuid"
+                      : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
+    return (edx & (1u << 3)) != 0;
+}
+
 void kernel_loader_main(uint32_t magic, uint32_t multiboot_address,
                         uint32_t oem) {
     uint32_t payload_size =
@@ -1089,6 +1120,9 @@ void kernel_loader_main(uint32_t magic, uint32_t multiboot_address,
 
     if (magic != 0x2BADB002u || multiboot_address == 0) {
         loader_halt("OpenKernel: invalid Multiboot handoff");
+    }
+    if (!loader_cpu_has_pse()) {
+        loader_halt("OpenKernel: CPU requires CPUID and PSE");
     }
     if (inflate_gzip(_binary_openkernel_elf_gz_start, payload_size,
                      elf_buffer, sizeof(elf_buffer), &image_size) != 0) {
