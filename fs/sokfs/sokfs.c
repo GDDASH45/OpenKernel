@@ -171,7 +171,8 @@ int sokfs_format(uint32_t start_lba, uint32_t sector_count)
     uint32_t bitmap_sectors;
 
     mounted = 0;
-    if (sector_count < 512U || sector_count > SOKFS_MAX_SECTORS)
+    if (sector_count < 512U || sector_count > SOKFS_MAX_SECTORS ||
+        start_lba > 0xFFFFFFFFU - sector_count)
         return -1;
     bitmap_sectors = (sector_count + 4095U) / 4096U;
 
@@ -240,7 +241,8 @@ int sokfs_mount(uint32_t start_lba)
         !bytes_equal(super.magic, SOKFS_MAGIC, 8) ||
         super.version != SOKFS_VERSION ||
         super.total_sectors < 512U ||
-        super.total_sectors > SOKFS_MAX_SECTORS)
+        super.total_sectors > SOKFS_MAX_SECTORS ||
+        start_lba > 0xFFFFFFFFU - super.total_sectors)
         return -1;
 
     minimum = 1U + super.bitmap_sectors + SOKFS_MAX_INODES;
