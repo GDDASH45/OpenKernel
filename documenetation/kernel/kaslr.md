@@ -22,7 +22,7 @@ Relocation targets are patched at their fixed physical addresses, while symbol v
 
 ## Paging and memory management
 
-Before jumping to the randomized entry point, the loader enables 4 MiB PSE mappings, keeps a full identity map, and adds virtual-to-physical mappings for the kernel image. This lets the kernel execute at its randomized virtual base while bootloader data remains reachable at its physical addresses.
+Before jumping to the randomized entry point, the loader enables 4 MiB PSE mappings, retains identity mappings for non-kernel physical addresses, and overlays the kernel's randomized virtual range with mappings to the fixed physical image. This lets the kernel execute at its randomized virtual base while bootloader data remains reachable at its physical addresses.
 
 During physical-memory initialization, the kernel rebuilds its page directory with the same kernel alias. It reserves both the fixed physical kernel image and the physical address range shadowed by the virtual alias, preventing the page allocator from returning pages whose identity mappings have been replaced. VMM CR3 switches translate the kernel page-directory pointer back to its physical address; process page directories remain identity-addressed allocations.
 
