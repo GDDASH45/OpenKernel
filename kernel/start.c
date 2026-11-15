@@ -6,6 +6,7 @@
 #include <driver/keyboard.h>
 #include <driver/mouse.h>
 #include <kernel/time.h>
+#include <kernel/pit.h>
 #include <kernel/interrupts.h>
 #include <driver/sound.h>
 #include <driver/net.h>
@@ -103,6 +104,10 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr, uint32_t oem)
 
     interrupts_init();
     printk("[BOOT] Interrupt descriptor table initialized.\n");
+    if (pit_init(PIT_DEFAULT_HZ) != 0) {
+        panic("PIT initialization failed!");
+    }
+    printk("[TIMER] PIT initialized at %u Hz.\n", pit_get_frequency());
 
     if (init_keyboard() != 0) {
         panic("Keyboard initialization failed!");
