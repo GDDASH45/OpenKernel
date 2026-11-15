@@ -231,6 +231,20 @@ endef
 
 $(foreach obj,$(ASM_OBJECTS),$(eval $(call ASM_OBJECT_ALIAS,$(obj))))
 
+# Directory targets build every object below the requested source directory.
+# Example: make lib/ builds lib/*.c, lib/**/*.c, and matching NASM sources.
+SOURCE_DIRS = $(shell find . -mindepth 1 -type d \
+	-not -path "./$(BUILD_DIR)/*" \
+	-not -path "./.git/*" | sed 's#^./##')
+
+define SOURCE_DIR_RULE
+.PHONY: $(1)/
+$(1)/: $(filter $(BUILD_DIR)/c/$(1)/%,$(C_OBJECTS)) \
+	$(filter $(BUILD_DIR)/asm/$(1)/%,$(ASM_OBJECTS))
+endef
+
+$(foreach dir,$(SOURCE_DIRS),$(eval $(call SOURCE_DIR_RULE,$(dir))))
+
 # Compile loadable module objects.
 $(MOD_DIR)/%.mo: modules/%.c $(VERSION_HEADER)
 	@mkdir -p $(dir $@)
