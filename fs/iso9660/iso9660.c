@@ -535,7 +535,7 @@ static int iso_resolve(
     return 0;
 }
 
-int iso9660_mount(void)
+static int iso9660_mount_selected(void)
 {
     uint32_t lba;
     int device;
@@ -642,11 +642,18 @@ int iso9660_mount(void)
     return 0;
 }
 
+int iso9660_mount(void)
+{
+    iso_ata_image = 0;
+    iso_image_start_lba = 0;
+    return iso9660_mount_selected();
+}
+
 int iso9660_mount_image(uint32_t image_start_lba)
 {
     iso_image_start_lba = image_start_lba;
     iso_ata_image = 1;
-    return iso9660_mount();
+    return iso9660_mount_selected();
 }
 
 int iso9660_is_mounted(void)
