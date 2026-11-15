@@ -22,6 +22,12 @@ SECTIONS
     .bss BLOCK(4K) : ALIGN(4K) {
         *(COMMON)
         *(.bss)
+        *(.bss.*)
+
+        . = ALIGN(16);
+        stack_bottom = .;
+        . += 16384;
+        stack_top = .;
     }
 
     __kernel_modules_start = .;
