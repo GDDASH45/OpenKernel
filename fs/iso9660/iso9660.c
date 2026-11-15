@@ -38,6 +38,8 @@ static int iso_joliet;
 static uint8_t iso_sector[ISO_SECTOR_SIZE];
 static uint16_t atapi_identify_data[256];
 
+static int atapi_read_block(uint32_t lba, void *buffer);
+
 /* Read one ISO logical block from ATAPI media or a 2048-byte ATA image block. */
 static int iso_read_block(uint32_t lba, void *buffer)
 {
@@ -425,7 +427,7 @@ static int iso_find_entry(
         char name[ISO_PATH_COMPONENT];
         int name_length;
 
-        if (atapi_read_block(sector_lba, iso_sector) != 0)
+        if (iso_read_block(sector_lba, iso_sector) != 0)
             return -1;
 
         record = iso_sector + sector_offset;
@@ -572,7 +574,7 @@ int iso9660_mount(void)
         uint32_t root_lba;
         uint32_t root_size;
 
-        if (atapi_read_block(lba, iso_sector) != 0)
+        if (iso_read_block(lba, iso_sector) != 0)
             return -1;
 
         descriptor = iso_sector;
@@ -720,7 +722,7 @@ int iso9660_read_file(const char *path, void *buffer, uint32_t capacity)
         if (amount > ISO_SECTOR_SIZE)
             amount = ISO_SECTOR_SIZE;
 
-        if (atapi_read_block(extent + i, iso_sector) != 0)
+        if (iso_read_block(extent + i, iso_sector) != 0)
             return -1;
 
         {
@@ -761,7 +763,7 @@ int iso9660_list_directory(const char *path, char *buffer, uint32_t capacity)
         int name_length;
         int directory;
 
-        if (atapi_read_block(sector_lba, iso_sector) != 0)
+        if (iso_read_block(sector_lba, iso_sector) != 0)
             return -1;
 
         record = iso_sector + sector_offset;
