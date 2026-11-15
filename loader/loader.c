@@ -617,11 +617,12 @@ static int kaslr_is_disabled(const struct multiboot_info *boot_info) {
              line[start + 2] == 'k' && line[start + 3] == 'a' &&
              line[start + 4] == 's' && line[start + 5] == 'l' &&
              line[start + 6] == 'r') ||
-            (length == 8u &&
+            (length == 9u &&
              line[start] == 'k' && line[start + 1] == 'a' &&
              line[start + 2] == 's' && line[start + 3] == 'l' &&
              line[start + 4] == 'r' && line[start + 5] == '=' &&
              line[start + 6] == 'o' && line[start + 7] == 'f' &&
+             line[start + 7] == 'f' &&
              line[start + 8] == 'f'))
             return 1;
     }
@@ -802,12 +803,15 @@ static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
                            uint32_t multiboot_address, uint32_t *entry) {
     const struct elf32_header *header;
     const struct elf32_program_header *headers[ELF_MAX_PROGRAM_HEADERS];
+    const struct multiboot_info *boot_info;
     uint32_t load_count = 0;
+    uint32_t minimum = 0xFFFFFFFFu;
+    uint32_t maximum = 0;
+    uint32_t slide;
     int entry_is_executable = 0;
 
-    if (image_size < sizeof(struct elf32_header)) {
+    if (image_size < sizeof(struct elf32_header))
         return -1;
-    }
     header = (const struct elf32_header *)image;
     if (header->ident[0] != 0x7Fu || header->ident[1] != 'E' ||
         header->ident[2] != 'L' || header->ident[3] != 'F' ||
@@ -821,9 +825,8 @@ static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
         header->program_header_offset > image_size ||
         header->program_header_count >
             (image_size - header->program_header_offset) /
-                header->program_header_size) {
+                header->program_header_size)
         return -1;
-    }
 
     for (uint32_t index = 0; index < header->program_header_count; index++) {
         const struct elf32_program_header *program =
@@ -831,11 +834,10 @@ static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
                 header->program_header_offset +
                 index * header->program_header_size);
         uint32_t address;
-        uint32_t end;
+        uint32_t segment_end;
 
-        if (program->type != PT_LOAD) {
+        if (program->type != PT_LOAD)
             continue;
-        }
         address = program->physical_address;
         if (program->memory_size < program->file_size ||
             program->offset > image_size ||
@@ -843,39 +845,40 @@ static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
             address != program->virtual_address ||
             address < KERNEL_LOAD_MINIMUM ||
             address >= KERNEL_LOAD_LIMIT ||
-            program->memory_size > KERNEL_LOAD_LIMIT - address) {
+            program->memory_size > KERNEL_LOAD_LIMIT - address ||
+            program->memory_size == 0)
             return -1;
-        }
-        end = address + program->memory_size;
+        segment_end = address + program->memory_size;
         for (uint32_t prior = 0; prior < load_count; prior++) {
             uint32_t prior_start = headers[prior]->physical_address;
             uint32_t prior_end = prior_start + headers[prior]->memory_size;
-            if (address < prior_end && prior_start < end) {
+            if (address < prior_end && prior_start < segment_end)
                 return -1;
-            }
         }
         headers[load_count++] = program;
-        if ((program->flags & PF_X) != 0 && header->entry >= address &&
-            header->entry < end) {
+        if (address < minimum)
+            minimum = address;
+        if (segment_end > maximum)
+            maximum = segment_end;
+        if ((program->flags & PF_X) != 0 &&
+            header->entry >= address && header->entry < segment_end)
             entry_is_executable = 1;
-        }
     }
-    if (load_count == 0 || !entry_is_executable) {
+    if (load_count == 0 || !entry_is_executable || maximum <= minimum)
         return -1;
-    }
 
-    const struct multiboot_info *boot_info =
-        (const struct multiboot_info *)(uintptr_t)multiboot_address;
+    boot_info = (const struct multiboot_info *)(uintptr_t)multiboot_address;
     if (multiboot_address >= KERNEL_LOAD_MINIMUM &&
         multiboot_address < KERNEL_LOAD_LIMIT &&
         sizeof(*boot_info) <= KERNEL_LOAD_LIMIT - multiboot_address) {
         uint32_t boot_info_end = multiboot_address + sizeof(*boot_info);
         for (uint32_t index = 0; index < load_count; index++) {
-            uint32_t start = headers[index]->physical_address;
-            uint32_t end = start + headers[index]->memory_size;
-            if (start < boot_info_end && multiboot_address < end) {
+            uint32_t segment_start = headers[index]->physical_address;
+            uint32_t segment_end = segment_start +
+                                   headers[index]->memory_size;
+            if (segment_start < boot_info_end &&
+                multiboot_address < segment_end)
                 return -1;
-            }
         }
     }
     if ((boot_info->flags & (1u << 3)) != 0 &&
@@ -883,33 +886,46 @@ static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
         const struct multiboot_module *modules =
             (const struct multiboot_module *)(uintptr_t)boot_info->mods_addr;
         for (uint32_t module = 0; module < boot_info->mods_count; module++) {
-            if (modules[module].mod_end < modules[module].mod_start) {
+            if (modules[module].mod_end < modules[module].mod_start)
                 return -1;
-            }
             for (uint32_t index = 0; index < load_count; index++) {
-                uint32_t start = headers[index]->physical_address;
-                uint32_t end = start + headers[index]->memory_size;
-                if (start < modules[module].mod_end &&
-                    modules[module].mod_start < end) {
+                uint32_t segment_start = headers[index]->physical_address;
+                uint32_t segment_end = segment_start +
+                                       headers[index]->memory_size;
+                if (segment_start < modules[module].mod_end &&
+                    modules[module].mod_start < segment_end)
                     return -1;
-                }
             }
         }
     }
 
+    slide = choose_kernel_slide(boot_info, minimum, maximum);
     for (uint32_t index = 0; index < load_count; index++) {
         const struct elf32_program_header *program = headers[index];
-        volatile uint8_t *destination =
-            (volatile uint8_t *)(uintptr_t)program->physical_address;
-        for (uint32_t byte = 0; byte < program->file_size; byte++) {
+        uint32_t destination_address = program->physical_address + slide;
+        volatile uint8_t *destination;
+
+        if (destination_address < program->physical_address ||
+            destination_address >= KERNEL_LOAD_LIMIT ||
+            program->memory_size > KERNEL_LOAD_LIMIT - destination_address ||
+            !kaslr_range_usable(boot_info, destination_address,
+                                destination_address + program->memory_size))
+            return -1;
+        destination = (volatile uint8_t *)(uintptr_t)destination_address;
+        for (uint32_t byte = 0; byte < program->file_size; byte++)
             destination[byte] = image[program->offset + byte];
-        }
         for (uint32_t byte = program->file_size;
-             byte < program->memory_size; byte++) {
+             byte < program->memory_size; byte++)
             destination[byte] = 0;
-        }
     }
-    *entry = header->entry;
+
+    if (apply_kernel_relocations(image, image_size, header, headers,
+                                 load_count, minimum, maximum, slide) != 0)
+        return -1;
+    if (header->entry + slide < header->entry ||
+        header->entry + slide >= KERNEL_LOAD_LIMIT)
+        return -1;
+    *entry = header->entry + slide;
     return 0;
 }
 
