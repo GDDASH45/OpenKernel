@@ -18,10 +18,17 @@
 #define CMOS_BINARY_MODE 0x04
 #define CMOS_24_HOUR_MODE 0x02
 
+#define RTC_READ_ATTEMPTS 8
+
 static uint8_t cmos_read(uint8_t reg)
 {
     port_byte_out(CMOS_ADDRESS, reg);
     return port_byte_in(CMOS_DATA);
+}
+
+static int bcd_is_valid(uint8_t value)
+{
+    return (value & 0x0F) <= 9 && ((value >> 4) & 0x0F) <= 9;
 }
 
 static uint8_t bcd_to_binary(uint8_t value)
@@ -40,32 +47,76 @@ static int rtc_wait_update(void)
     return timeout != 0;
 }
 
+static int rtc_date_is_valid(const struct rtc_time *time)
+{
+    static const uint8_t days_per_month[] = {
+        31, 28, 31, 30, 31, 30,
+        31, 31, 30, 31, 30, 31
+    };
+    uint8_t max_day;
+
+    if (time->month < 1 || time->month > 12 ||
+        time->hour > 23 || time->minute > 59 ||
+        time->second > 59) {
+        return 0;
+    }
+
+    max_day = days_per_month[time->month - 1];
+
+    if (time->month == 2 &&
+        ((time->year % 4u) == 0u)) {
+        max_day = 29;
+    }
+
+    return time->day >= 1 && time->day <= max_day;
+}
+
 static int rtc_read_raw(struct rtc_time *time)
 {
     uint8_t status_b;
     uint8_t hour;
+    uint8_t second;
+    uint8_t minute;
+    uint8_t day;
+    uint8_t month;
+    uint8_t year;
 
     if (!rtc_wait_update()) {
         return -1;
     }
 
-    time->second = cmos_read(CMOS_SECONDS);
-    time->minute = cmos_read(CMOS_MINUTES);
-    hour = cmos_read(CMOS_HOURS);
-    time->day = cmos_read(CMOS_DAY);
-    time->month = cmos_read(CMOS_MONTH);
-    time->year = cmos_read(CMOS_YEAR);
-
     status_b = cmos_read(CMOS_STATUS_B);
+    second = cmos_read(CMOS_SECONDS);
+    minute = cmos_read(CMOS_MINUTES);
+    hour = cmos_read(CMOS_HOURS);
+    day = cmos_read(CMOS_DAY);
+    month = cmos_read(CMOS_MONTH);
+    year = cmos_read(CMOS_YEAR);
 
-    /* Convert BCD values when the RTC is not in binary mode. */
+    /*
+     * Do not accept a sample taken across an RTC update. The
+     * second UIP check also catches an update that began while
+     * the individual CMOS registers were being read.
+     */
+    if (cmos_read(CMOS_STATUS_A) & CMOS_UIP) {
+        return -1;
+    }
+
     if (!(status_b & CMOS_BINARY_MODE)) {
-        time->second = bcd_to_binary(time->second);
-        time->minute = bcd_to_binary(time->minute);
-        time->day = bcd_to_binary(time->day);
-        time->month = bcd_to_binary(time->month);
-        time->year = bcd_to_binary(time->year);
+        if (!bcd_is_valid(second) ||
+            !bcd_is_valid(minute) ||
+            !bcd_is_valid((uint8_t)(hour & 0x7F)) ||
+            !bcd_is_valid(day) ||
+            !bcd_is_valid(month) ||
+            !bcd_is_valid(year)) {
+            return -1;
+        }
 
+        second = bcd_to_binary(second);
+        minute = bcd_to_binary(minute);
+        day = bcd_to_binary(day);
+        month = bcd_to_binary(month);
+        year = bcd_to_binary(year);
         hour = (uint8_t)((hour & 0x80) |
                          bcd_to_binary(hour & 0x7F));
     }
@@ -74,6 +125,10 @@ static int rtc_read_raw(struct rtc_time *time)
     if (!(status_b & CMOS_24_HOUR_MODE)) {
         uint8_t pm = hour & 0x80;
         hour &= 0x7F;
+
+        if (hour < 1 || hour > 12) {
+            return -1;
+        }
 
         if (hour == 12) {
             hour = 0;
@@ -84,7 +139,16 @@ static int rtc_read_raw(struct rtc_time *time)
         }
     }
 
+    time->second = second;
+    time->minute = minute;
     time->hour = hour;
+    time->day = day;
+    time->month = month;
+    time->year = year;
+
+    if (!rtc_date_is_valid(time)) {
+        return -1;
+    }
 
     return 0;
 }
@@ -93,31 +157,36 @@ int rtc_get_time(struct rtc_time *time)
 {
     struct rtc_time first;
     struct rtc_time second;
+    unsigned int attempt;
 
     if (time == 0) {
         return -1;
     }
 
     /*
-     * Read twice to avoid returning a partially updated time
-     * if the RTC changes between register reads.
+     * Read matching samples. Bound retries so a broken or
+     * uninitialized RTC cannot hang printk() indefinitely.
      */
-    do {
+    for (attempt = 0; attempt < RTC_READ_ATTEMPTS; attempt++) {
         if (rtc_read_raw(&first) != 0 ||
             rtc_read_raw(&second) != 0) {
-            return -1;
+            continue;
         }
-    } while (
-        first.second != second.second ||
-        first.minute != second.minute ||
-        first.hour != second.hour ||
-        first.day != second.day ||
-        first.month != second.month ||
-        first.year != second.year
-    );
 
-    *time = second;
-    time->year = (uint16_t)(2000u + second.year);
+        if (first.second != second.second ||
+            first.minute != second.minute ||
+            first.hour != second.hour ||
+            first.day != second.day ||
+            first.month != second.month ||
+            first.year != second.year) {
+            continue;
+        }
 
-    return 0;
+        *time = second;
+        time->year = (uint16_t)(2000u + second.year);
+        return 0;
+    }
+
+    /* Invalid CMOS contents must never become a fake timestamp. */
+    return -1;
 }
