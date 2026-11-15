@@ -10,6 +10,8 @@
 #include <kernel/module.h>
 #include <kernel/vdso.h>
 #include <kernel/acpi.h>
+#include <kernel/user.h>
+#include <memory/vmm.h>
 #include <fs/okfs/okfs.h>
 
 #define OK_SYSCALL_WRITE_MAX   4096u
@@ -18,6 +20,40 @@
 
 extern int execve(const char *filename, char *const argv[],
                   char *const envp[]);
+
+#define OK_MODULE_ARGUMENT_MAX 256u
+
+static int32_t copy_user_string(uint32_t address, char *destination,
+                                uint32_t capacity)
+{
+    struct process *process = process_current();
+
+    if (address == 0 || destination == 0 || capacity == 0 ||
+        process == 0 || process->address_space == 0) {
+        return -OK_EFAULT;
+    }
+
+    for (uint32_t index = 0; index < capacity; index++) {
+        if (address > UINT32_MAX - index ||
+            vmm_copy_from_user(process->address_space, &destination[index],
+                               address + index, 1) != 0) {
+            return -OK_EFAULT;
+        }
+        if (destination[index] == '\0') {
+            return 0;
+        }
+    }
+    destination[capacity - 1u] = '\0';
+    return -OK_ENAMETOOLONG;
+}
+
+static int module_syscall_allowed(void)
+{
+    struct process *process = process_current();
+
+    return process != 0 &&
+           (process->uid == UID_SROOT || process->uid == UID_ROOT);
+}
 
 static int32_t console_write(const char *buffer, uint32_t size) {
     int result;
@@ -239,21 +275,33 @@ int32_t syscall_dispatch(uint32_t number,
     case OK_SYS_NET_GET_IPV4:
         return (int32_t)net_ipv4_address();
 
-    case OK_SYS_MODULE_LOAD:
-        if (arg1 == 0) {
-            return -OK_EFAULT;
-        }
-        return module_load_from_initrd((const char *)(uintptr_t)arg1) == 0
-                   ? 0
-                   : -22;
+    case OK_SYS_MODULE_INSERT: {
+        char path[OK_MODULE_ARGUMENT_MAX];
+        int32_t copied;
 
-    case OK_SYS_MODULE_UNLOAD:
-        if (arg1 == 0) {
-            return -OK_EFAULT;
+        if (!module_syscall_allowed()) {
+            return -OK_EPERM;
         }
-        return module_remove((const char *)(uintptr_t)arg1) == 0
-                   ? 0
-                   : -22;
+        copied = copy_user_string(arg1, path, sizeof(path));
+        if (copied != 0) {
+            return copied;
+        }
+        return module_load_from_initrd(path) == 0 ? 0 : -22;
+    }
+
+    case OK_SYS_MODULE_REMOVE: {
+        char name[OK_MODULE_ARGUMENT_MAX];
+        int32_t copied;
+
+        if (!module_syscall_allowed()) {
+            return -OK_EPERM;
+        }
+        copied = copy_user_string(arg1, name, sizeof(name));
+        if (copied != 0) {
+            return copied;
+        }
+        return module_remove(name) == 0 ? 0 : -22;
+    }
 
     case OK_SYS_REBOOT:
         acpi_reboot();
