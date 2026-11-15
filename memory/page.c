@@ -180,6 +180,8 @@ int memory_init(const struct multiboot_info *boot_info) {
         }
     }
 
+    /* Reserve the top GiB for user virtual mappings; physical pages stay below it. */
+    reserve_range(0xC0000000u, 0x40000000u);
     mark_page_used(0);
     next_page = 0x100000u / MEMORY_PAGE_SIZE;
     enable_identity_paging();
