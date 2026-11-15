@@ -602,14 +602,14 @@ static int kaslr_is_disabled(const struct multiboot_info *boot_info) {
     if ((boot_info->flags & (1u << 2)) == 0 || boot_info->cmdline == 0)
         return 0;
     line = (const char *)(uintptr_t)boot_info->cmdline;
-    while (line[index] != '\0' && index < 4096u) {
+    while (index < 4096u && line[index] != '\0') {
         uint32_t start;
         uint32_t length;
         while (line[index] == ' ' || line[index] == '\t')
             index++;
         start = index;
-        while (line[index] != '\0' && line[index] != ' ' &&
-               line[index] != '\t' && index < 4096u)
+        while (index < 4096u && line[index] != '\0' &&
+               line[index] != ' ' && line[index] != '\t')
             index++;
         length = index - start;
         if ((length == 7u &&
@@ -622,7 +622,6 @@ static int kaslr_is_disabled(const struct multiboot_info *boot_info) {
              line[start + 2] == 's' && line[start + 3] == 'l' &&
              line[start + 4] == 'r' && line[start + 5] == '=' &&
              line[start + 6] == 'o' && line[start + 7] == 'f' &&
-             line[start + 7] == 'f' &&
              line[start + 8] == 'f'))
             return 1;
     }
@@ -781,7 +780,7 @@ static int apply_kernel_relocations(
             new_symbol = original_symbol;
             if (symbol->section_index != ELF_SHN_UNDEF &&
                 symbol->section_index != ELF_SHN_ABS &&
-                original_symbol >= minimum && original_symbol < maximum) {
+                original_symbol >= minimum && original_symbol <= maximum) {
                 new_symbol += slide;
                 if (new_symbol < original_symbol)
                     return -1;
