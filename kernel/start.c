@@ -24,6 +24,7 @@
 #include <kernel/module.h>
 #include <kernel/vdso.h>
 #include <kernel/kaslr.h>
+#include <kernel/pci.h>
 
 // Fix Undefined errors
 #ifndef NULL
@@ -103,6 +104,9 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr, uint32_t oem)
     printk("[BOOT] GDT initialized.\n");
     if (!acpi_init()) {
         printk("[ACPI] Reset register unavailable; reboot will use the keyboard controller.\n");
+    }
+    if (pci_init() != 0) {
+        printk("[PCI] Legacy PCI configuration mechanism unavailable.\n");
     }
     vdso_init();
     bootopts_init((mbi->flags & (1u << 2))
