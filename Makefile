@@ -301,6 +301,8 @@ $(PLAIN_KERNEL_ELF): $(OPENKERNEL_A) linker_plain.ld
 	@echo "LD $@"
 	@$(CC) $(PLAIN_LDFLAGS) -o "$@" $(PLAIN_OBJECTS) -lgcc
 	@test -f "$@"
+	@echo "KASLR RELOCS $@"
+	@readelf -rW "$@" | awk '$3 ~ /^R_386_/ && $3 != "R_386_NONE" && $3 != "R_386_32" && $3 != "R_386_PC32" { print "Unsupported KASLR relocation: " $3 > "/dev/stderr"; bad = 1 } END { exit bad }'
 
 # Compress the plain kernel for the Multiboot loader.
 $(PLAIN_KERNEL): $(PLAIN_KERNEL_ELF)
