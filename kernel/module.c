@@ -104,6 +104,7 @@ static uintptr_t resolve_kernel_symbol(const char *name) {
     } exports[] = {
         { "k_print", (uintptr_t)k_print },
         { "k_print_char", (uintptr_t)k_print_char },
+        { "printk", (uintptr_t)printk },
         { "sleep_ms", (uintptr_t)sleep_ms }
     };
 
