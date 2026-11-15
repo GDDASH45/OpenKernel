@@ -605,7 +605,8 @@ static int kaslr_is_disabled(const struct multiboot_info *boot_info) {
     while (index < 4096u && line[index] != '\0') {
         uint32_t start;
         uint32_t length;
-        while (line[index] == ' ' || line[index] == '\t')
+        while (index < 4096u &&
+               (line[index] == ' ' || line[index] == '\t'))
             index++;
         start = index;
         while (index < 4096u && line[index] != '\0' &&
@@ -907,8 +908,9 @@ static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
         if (destination_address < program->physical_address ||
             destination_address >= KERNEL_LOAD_LIMIT ||
             program->memory_size > KERNEL_LOAD_LIMIT - destination_address ||
-            !kaslr_range_usable(boot_info, destination_address,
-                                destination_address + program->memory_size))
+            (slide != 0 &&
+             !kaslr_range_usable(boot_info, destination_address,
+                                 destination_address + program->memory_size)))
             return -1;
         destination = (volatile uint8_t *)(uintptr_t)destination_address;
         for (uint32_t byte = 0; byte < program->file_size; byte++)
