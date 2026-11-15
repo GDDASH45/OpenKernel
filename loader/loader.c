@@ -882,6 +882,8 @@ static int apply_kernel_relocations(
             symbol_section->offset > image_size ||
             symbol_section->size > image_size - symbol_section->offset)
             return -1;
+        if (symbol_section->size % sizeof(struct elf32_symbol) != 0)
+            return -1;
         symbol_count = symbol_section->size /
                        sizeof(struct elf32_symbol);
         symbols = (const struct elf32_symbol *)(image +
@@ -1005,7 +1007,8 @@ static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
             header->entry >= address && header->entry < segment_end)
             entry_is_executable = 1;
     }
-    if (load_count == 0 || !entry_is_executable || maximum <= minimum)
+    if (load_count == 0 || !entry_is_executable || maximum <= minimum ||
+        minimum != KERNEL_LOAD_MINIMUM)
         return -1;
 
     boot_info = (const struct multiboot_info *)(uintptr_t)multiboot_address;
