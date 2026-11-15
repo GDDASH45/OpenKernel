@@ -31,7 +31,7 @@ static int console_device_write(struct vfs_node *node, const char *buffer,
     return (int)size;
 }
 
-static uint32_t device_write_decimal(char *buffer, uint64_t value)
+static uint32_t device_write_decimal(char *buffer, uint32_t capacity, uint64_t value)
 {
     char digits[20];
     uint32_t count = 0;
@@ -39,10 +39,11 @@ static uint32_t device_write_decimal(char *buffer, uint64_t value)
         digits[count++] = (char)('0' + value % 10u);
         value /= 10u;
     } while (value != 0 && count < sizeof(digits));
-    for (uint32_t index = 0; index < count; index++) {
+    uint32_t copied = count < capacity ? count : capacity;
+    for (uint32_t index = 0; index < copied; index++) {
         buffer[index] = digits[count - index - 1u];
     }
-    return count;
+    return copied;
 }
 static int device_read(struct vfs_node *node, char *buffer, uint32_t size) {
     uint32_t type = (uint32_t)(uintptr_t)node->data;
@@ -56,7 +57,7 @@ static int device_read(struct vfs_node *node, char *buffer, uint32_t size) {
     if (type == VFS_DEVICE_UPTIME) {
         uint32_t used;
         if (size == 0) return 0;
-        used = device_write_decimal(buffer, pit_get_uptime_ms());
+        used = device_write_decimal(buffer, size, pit_get_uptime_ms());
         if (used < size) buffer[used++] = '\n';
         return (int)used;
     }
