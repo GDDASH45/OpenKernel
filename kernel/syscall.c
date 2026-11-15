@@ -9,6 +9,7 @@
 #include <kernel.h>
 #include <kernel/module.h>
 #include <kernel/vdso.h>
+#include <kernel/pit.h>
 #include <kernel/acpi.h>
 #include <kernel/user.h>
 #include <memory/vmm.h>
@@ -103,6 +104,24 @@ int32_t syscall_dispatch(uint32_t number,
 
     case OK_SYS_GETPID:
         return (int32_t)process_current_pid();
+
+    case OK_SYS_GETUID: {
+        struct process *process = process_current();
+        return process != 0 ? (int32_t)process->uid : -OK_EPERM;
+    }
+
+    case OK_SYS_GETPPID: {
+        struct process *process = process_current();
+        return process != 0 ? (int32_t)process->parent_pid : -OK_EPERM;
+    }
+
+    case OK_SYS_UPTIME_MS:
+        return (int32_t)(uint32_t)pit_get_uptime_ms();
+
+    case OK_SYS_SLEEP_MS:
+        if (arg1 > 60000u) return -22;
+        pit_sleep_ms(arg1);
+        return 0;
 
     case OK_SYS_VDSO:
         return (int32_t)(uintptr_t)vdso_page();
