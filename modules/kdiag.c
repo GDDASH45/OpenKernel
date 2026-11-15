@@ -1205,7 +1205,7 @@ static int kdiag_add_u32(uint32_t left, uint32_t right, uint32_t *result)
 
 static int kdiag_mul_u32(uint32_t left, uint32_t right, uint32_t *result)
 {
-    if (result == 0 || (right != 0 && left > 0xFFFFFFFFu / right))
+    if (result == 0 || (right != 0 && left > 0xFFFFFFFFu - right))
         return -1;
     *result = left * right;
     return 0;
@@ -1781,14 +1781,23 @@ static void kdiag_test_crc_incremental(void)
     kdiag_expect(whole, split);
 }
 
+static uint32_t kdiag_mod_small(uint32_t value, uint32_t divisor)
+{
+    if (divisor == 0)
+        return 0xFFFFFFFFu;
+    while (value >= divisor)
+        value -= divisor;
+    return value;
+}
+
 static void kdiag_test_gcd_properties(void)
 {
     for (uint32_t a = 1; a <= 32; ++a) {
         for (uint32_t b = 1; b <= 32; ++b) {
             uint32_t gcd = kdiag_gcd(a, b);
             kdiag_expect(gcd != 0, 1);
-            kdiag_expect(a % gcd, 0);
-            kdiag_expect(b % gcd, 0);
+            kdiag_expect(kdiag_mod_small(a, gcd), 0);
+            kdiag_expect(kdiag_mod_small(b, gcd), 0);
             kdiag_expect(kdiag_gcd(a, b), kdiag_gcd(b, a));
         }
     }
