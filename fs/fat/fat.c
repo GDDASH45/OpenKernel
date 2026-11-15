@@ -24,7 +24,7 @@ struct fat_entry {
     uint8_t name[11];
     uint8_t attributes;
     uint8_t nt_reserved;
-    uint8_t creation[8];
+    uint8_t creation[7];
     uint16_t cluster_high;
     uint8_t modified[4];
     uint16_t cluster_low;
