@@ -739,6 +739,8 @@ static int kaslr_is_disabled(const struct multiboot_info *boot_info) {
 static uint32_t choose_kernel_slide(const struct multiboot_info *boot_info,
                                     uint32_t minimum, uint32_t maximum) {
     uint32_t span = maximum - minimum;
+    uint32_t mapped_span =
+        (span + KASLR_GRANULARITY - 1u) & ~(KASLR_GRANULARITY - 1u);
     uint32_t first_candidate;
     uint32_t slots;
     uint32_t seed;
@@ -747,7 +749,8 @@ static uint32_t choose_kernel_slide(const struct multiboot_info *boot_info,
 
     if (kaslr_is_disabled(boot_info) || span == 0 ||
         (minimum & (KASLR_GRANULARITY - 1u)) != 0 ||
-        span >= KASLR_MAXIMUM - KASLR_MINIMUM)
+        mapped_span < span ||
+        mapped_span >= KASLR_MAXIMUM - KASLR_MINIMUM)
         return 0;
 
     __asm__ volatile ("rdtsc" : "=a"(tsc_low), "=d"(tsc_high));
@@ -759,7 +762,7 @@ static uint32_t choose_kernel_slide(const struct multiboot_info *boot_info,
         seed = 0xA341316Cu;
     kaslr_random_state = seed;
 
-    slots = (KASLR_MAXIMUM - KASLR_MINIMUM - span) /
+    slots = (KASLR_MAXIMUM - KASLR_MINIMUM - mapped_span) /
             KASLR_GRANULARITY;
     if (slots == 0)
         return 0;
@@ -769,7 +772,7 @@ static uint32_t choose_kernel_slide(const struct multiboot_info *boot_info,
         uint32_t slot = (first_candidate + attempt) % slots;
         uint32_t candidate = KASLR_MINIMUM +
                              slot * KASLR_GRANULARITY;
-        uint32_t end = candidate + span;
+        uint32_t end = candidate + mapped_span;
         if (kaslr_range_available(boot_info, candidate, end))
             return candidate - minimum;
     }
@@ -792,6 +795,8 @@ static volatile uint32_t *relocation_target(
 static int enable_kaslr_paging(uint32_t physical_base,
                                uint32_t image_size, uint32_t slide) {
     uint32_t virtual_base = physical_base + slide;
+    uint32_t mapped_size =
+        (image_size + PAGE_SIZE_4M - 1u) & ~(PAGE_SIZE_4M - 1u);
     uint32_t cr4;
     uint32_t cr0;
 
@@ -799,7 +804,8 @@ static int enable_kaslr_paging(uint32_t physical_base,
         (physical_base & (PAGE_SIZE_4M - 1u)) != 0 ||
         (virtual_base & (PAGE_SIZE_4M - 1u)) != 0 ||
         virtual_base >= KASLR_MAXIMUM ||
-        image_size > KASLR_MAXIMUM - virtual_base)
+        mapped_size < image_size ||
+        mapped_size > KASLR_MAXIMUM - virtual_base)
         return -1;
 
     for (uint32_t index = 0; index < PAGE_DIRECTORY_ENTRIES; index++)
