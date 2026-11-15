@@ -33,7 +33,7 @@ struct fat16_volume {
 struct fat_directory_entry {
     uint8_t name[11];
     uint8_t attributes;
-    uint8_t reserved[8];
+    uint8_t reserved[14];
     uint16_t first_cluster;
     uint32_t file_size;
 } __attribute__((packed));
@@ -427,6 +427,9 @@ int fat_read_file(const char *path, void *buffer, uint32_t capacity)
     }
     if (entry.file_size > capacity) {
         return -22;
+    }
+    if (entry.file_size > 0x7FFFFFFFu) {
+        return -1;
     }
     if (entry.file_size == 0) {
         return 0;
