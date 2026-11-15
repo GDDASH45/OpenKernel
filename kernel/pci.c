@@ -50,8 +50,9 @@ static void pci_report_function(uint8_t bus, uint8_t device,
 
     discovered_devices++;
     printk("[PCI] %x:%x.%x vendor=%x device=%x class=%x:%x prog-if=%x\n",
-           bus, device, function, vendor, product, class_code, subclass,
-           programming_interface);
+           (uint32_t)bus, (uint32_t)device, (uint32_t)function,
+           (uint32_t)vendor, (uint32_t)product, (uint32_t)class_code,
+           (uint32_t)subclass, (uint32_t)programming_interface);
 }
 
 int pci_init(void)
