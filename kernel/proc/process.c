@@ -2,6 +2,7 @@
 #include <kernel/syscall.h>
 #include <kernel/user.h>
 #include <kernel.h>
+#include <write/write.h>
 #include <memory/page.h>
 #include <kernel/vdso.h>
 #include <kernel/gdt.h>
