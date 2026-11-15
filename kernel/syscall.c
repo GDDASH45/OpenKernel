@@ -256,6 +256,7 @@ int32_t syscall_dispatch(uint32_t number,
                 arg3
             );
             return result == -11 ? -OK_EAGAIN :
+                   result == -28 ? -28 :
                    result < 0 ? -OK_EIO : result;
         }
 
