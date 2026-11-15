@@ -30,6 +30,7 @@ static uint32_t iso_volume_sectors;
 static uint32_t iso_root_lba;
 static uint32_t iso_root_size;
 static uint8_t iso_sector[ISO_SECTOR_SIZE];
+static uint16_t atapi_identify_data[256];
 
 static void atapi_insw(uint16_t port, uint16_t *buffer, uint32_t count)
 {
@@ -96,9 +97,6 @@ static void atapi_select(int device)
  */
 static int atapi_probe(int device)
 {
-    uint16_t identify[256];
-    uint32_t i;
-
     atapi_select(device);
 
     if (port_byte_in(ATAPI_STATUS) == 0x00)
@@ -110,10 +108,7 @@ static int atapi_probe(int device)
     if (atapi_wait(ATAPI_STATUS_DRQ) != 0)
         return -1;
 
-    atapi_insw(ATAPI_DATA, identify, 256);
-
-    for (i = 0; i < 256; ++i)
-        identify[i] = 0;
+    atapi_insw(ATAPI_DATA, atapi_identify_data, 256);
 
     return 0;
 }
@@ -127,6 +122,7 @@ static int atapi_read_block(uint32_t lba, void *buffer)
     uint32_t transferred = 0;
     uint32_t timeout;
     uint8_t status;
+    int completed = 0;
 
     if (buffer == 0 || atapi_device < 0)
         return -1;
@@ -178,8 +174,10 @@ static int atapi_read_block(uint32_t lba, void *buffer)
             return -1;
         }
 
-        if (!(status & ATAPI_STATUS_DRQ))
+        if (!(status & ATAPI_STATUS_DRQ)) {
+            completed = 1;
             break;
+        }
 
         byte_count = (uint16_t)port_byte_in(ATAPI_BYTE_COUNT_L);
         byte_count |= (uint16_t)port_byte_in(ATAPI_BYTE_COUNT_H) << 8;
@@ -201,7 +199,7 @@ static int atapi_read_block(uint32_t lba, void *buffer)
         transferred += byte_count;
     }
 
-    if (timeout == 0 || transferred != ISO_SECTOR_SIZE)
+    if (!completed || transferred != ISO_SECTOR_SIZE)
         return -1;
 
     return 0;
@@ -458,7 +456,9 @@ int iso9660_mount(void)
         if (iso_volume_sectors == 0 ||
             iso_root_lba >= iso_volume_sectors ||
             iso_root_size == 0 ||
-            iso_root_size > iso_volume_sectors * ISO_SECTOR_SIZE)
+            (iso_root_size != 0 &&
+             (iso_root_size - 1) / ISO_SECTOR_SIZE >= iso_volume_sectors) ||
+            iso_le16(descriptor + 128) != ISO_SECTOR_SIZE)
             return -1;
 
         iso_mounted = 1;
