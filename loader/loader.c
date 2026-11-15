@@ -461,7 +461,6 @@ static int inflate_gzip(const uint8_t *input, uint32_t input_size,
 #define ELF_SHT_SYMTAB 2u
 #define ELF_SHT_REL 9u
 #define ELF_SHN_UNDEF 0u
-#define ELF_SHN_ABS 0xFFF1u
 #define ELF_R_386_NONE 0u
 #define ELF_R_386_32 1u
 #define ELF_R_386_PC32 2u
@@ -558,20 +557,29 @@ static int kaslr_range_usable(const struct multiboot_info *boot_info,
         return 0;
     }
 
+    if ((uint32_t)(uintptr_t)boot_info >
+        0xFFFFFFFFu - (uint32_t)sizeof(*boot_info))
+        return 0;
     if (range_overlaps(first, end, (uint32_t)(uintptr_t)boot_info,
                        (uint32_t)(uintptr_t)boot_info + sizeof(*boot_info)))
         return 0;
-    if ((boot_info->flags & (1u << 6)) != 0 &&
-        range_overlaps(first, end, boot_info->mmap_addr,
-                       boot_info->mmap_addr + boot_info->mmap_length))
-        return 0;
+    if ((boot_info->flags & (1u << 6)) != 0) {
+        if (boot_info->mmap_addr > 0xFFFFFFFFu - boot_info->mmap_length ||
+            range_overlaps(first, end, boot_info->mmap_addr,
+                           boot_info->mmap_addr + boot_info->mmap_length))
+            return 0;
+    }
     if ((boot_info->flags & (1u << 3)) != 0 &&
         boot_info->mods_count != 0 && boot_info->mods_addr != 0) {
         const struct multiboot_module *modules =
             (const struct multiboot_module *)(uintptr_t)boot_info->mods_addr;
-        if (range_overlaps(first, end, boot_info->mods_addr,
-                           boot_info->mods_addr +
-                           boot_info->mods_count * sizeof(*modules)))
+        uint32_t module_table_size;
+        if (boot_info->mods_count > 0xFFFFFFFFu / sizeof(*modules))
+            return 0;
+        module_table_size = boot_info->mods_count * sizeof(*modules);
+        if (boot_info->mods_addr > 0xFFFFFFFFu - module_table_size ||
+            range_overlaps(first, end, boot_info->mods_addr,
+                           boot_info->mods_addr + module_table_size))
             return 0;
         for (uint32_t index = 0; index < boot_info->mods_count; index++) {
             if (modules[index].mod_end < modules[index].mod_start ||
@@ -588,6 +596,7 @@ static int kaslr_range_usable(const struct multiboot_info *boot_info,
         while (length < 4096u && command_line[length] != '\0')
             length++;
         if (length == 4096u ||
+            boot_info->cmdline > 0xFFFFFFFFu - length - 1u ||
             range_overlaps(first, end, boot_info->cmdline,
                            boot_info->cmdline + length + 1u))
             return 0;
