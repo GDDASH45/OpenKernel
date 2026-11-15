@@ -464,6 +464,7 @@ static int inflate_gzip(const uint8_t *input, uint32_t input_size,
 #define ELF_R_386_NONE 0u
 #define ELF_R_386_32 1u
 #define ELF_R_386_PC32 2u
+#define ELF_R_386_PLT32 4u
 #define KASLR_MINIMUM 0x80000000u
 #define KASLR_MAXIMUM 0xC0000000u
 #define KASLR_GRANULARITY 0x00400000u
@@ -531,7 +532,7 @@ static int kaslr_range_available(const struct multiboot_info *boot_info,
 
     /* Only overlay addresses whose physical identity aliases are safe. */
     if ((boot_info->flags & (1u << 6)) == 0 ||
-        boot_info->mmap_addr == 0 || boot_info->mmap_length == 0 ||
+        boot_info->mmap_addr == 0 || boot_info->mmap_length < 24u ||
         boot_info->mmap_addr > 0xFFFFFFFFu - boot_info->mmap_length)
         return 0;
     {
@@ -873,7 +874,8 @@ static int apply_kernel_relocations(
 
             if (type == ELF_R_386_NONE)
                 continue;
-            if (type != ELF_R_386_32 && type != ELF_R_386_PC32)
+            if (type != ELF_R_386_32 && type != ELF_R_386_PC32 &&
+                type != ELF_R_386_PLT32)
                 return -1;
             if (symbol_index >= symbol_count ||
                 original_place < minimum ||
