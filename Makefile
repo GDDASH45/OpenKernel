@@ -48,7 +48,7 @@ LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 \
 	-nostdlib -fno-pie -no-pie
 
 PLAIN_LDFLAGS = -m32 -T linker_plain.ld -ffreestanding -O2 \
-	-nostdlib -fno-pie -no-pie -Wl,-e,_start
+	-nostdlib -fno-pie -no-pie -Wl,-e,_start -Wl,--emit-relocs
 
 ASFLAGS = -f elf32
 HOST_CFLAGS = -std=gnu99 -O2 -Wall -Wextra -Iinclude
