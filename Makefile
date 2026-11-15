@@ -52,6 +52,7 @@ PLAIN_LDFLAGS = -m32 -T linker_plain.ld -ffreestanding -O2 \
 
 ASFLAGS = -f elf32
 HOST_CFLAGS = -std=gnu99 -O2 -Wall -Wextra -Iinclude
+MKFS_TOOLS = tools/mkfs.kfs tools/mkfs.okfs tools/mkfs.sokfs
 OCONF_CFLAGS = -std=c11 -O2 -Wall -Wextra -Werror
 
 # Find every .Ocfg file in the repository.
@@ -118,6 +119,7 @@ ALL_C_SOURCES = $(shell find . -name "*.c" \
 	-not -path "./loader/*" \
 	-not -path "./modules/*" \
 	-not -path "./host/*" \
+	-not -path "./tools/*" \
 	-not -path "./bionicbox/*" \
 	-not -path "./scripts/*" \
 	-not -path "./.git/*")
@@ -160,7 +162,7 @@ BUILTIN_ARCHIVES = $(C_BUILTIN_ARCHIVES) $(ASM_BUILTIN_ARCHIVES)
 DEPS = $(C_OBJECTS:.o=.d) $(MOD_OBJS:.mo=.d)
 
 .PHONY: all configured-build clean linux run-linux os.iso patch_modules modules \
-	oconf-tools olddefconfig config-build version mrproper
+	oconf-tools mkfs-tools olddefconfig config-build version mrproper
 
 # Generate .config first, then restart Make so source lists use it.
 all:
@@ -342,6 +344,24 @@ $(LINUX_PROGRAM): $(HOST_SOURCES)
 	@mkdir -p $(dir $@)
 	@echo "HOST CC $@"
 	@$(HOST_CC) $(HOST_CFLAGS) -o $@ $(HOST_SOURCES)
+
+
+# Build host-side filesystem formatters.
+tools/mkfs.kfs: tools/mkfs.kfs.c tools/mkfs_common.h include/fs/kfs.h
+	@echo "HOST CC $@"
+	@$(HOST_CC) $(HOST_CFLAGS) -o $@ tools/mkfs.kfs.c
+
+tools/mkfs.okfs: tools/mkfs.okfs.c tools/mkfs_common.h \
+	include/fs/okfs/okfs.h include/fs/okfs/okfs2_internal.h
+	@echo "HOST CC $@"
+	@$(HOST_CC) $(HOST_CFLAGS) -o $@ tools/mkfs.okfs.c
+
+tools/mkfs.sokfs: tools/mkfs.sokfs.c tools/mkfs_common.h \
+	include/fs/sokfs/sokfs.h
+	@echo "HOST CC $@"
+	@$(HOST_CC) $(HOST_CFLAGS) -o $@ tools/mkfs.sokfs.c
+
+mkfs-tools: $(MKFS_TOOLS)
 
 # Build the ISO after configuration has been generated and applied.
 os.iso: $(shell find initramfs -type f) \
