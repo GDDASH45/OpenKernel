@@ -118,10 +118,8 @@ int32_t syscall_dispatch(uint32_t number,
     case OK_SYS_UPTIME_MS:
         return (int32_t)(uint32_t)pit_get_uptime_ms();
 
-    case OK_SYS_SLEEP_MS:
-        if (arg1 > 60000u) return -22;
-        pit_sleep_ms(arg1);
-        return 0;
+    case OK_SYS_GETTICKS:
+        return (int32_t)(uint32_t)pit_get_ticks();
 
     case OK_SYS_VDSO:
         return (int32_t)(uintptr_t)vdso_page();
@@ -239,6 +237,7 @@ int32_t syscall_dispatch(uint32_t number,
                 arg3
             );
             return result == -11 ? -OK_EAGAIN :
+                   result == -28 ? -28 :
                    result < 0 ? -OK_EIO : result;
         }
 
