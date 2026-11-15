@@ -144,9 +144,16 @@ uint64_t pit_get_uptime_ms(void)
     return (ticks * 1000u) / frequency;
 }
 
-static void pit_relax(void)
+static void pit_fallback_delay(uint32_t milliseconds)
 {
-    __asm__ volatile ("pause");
+    volatile uint32_t outer;
+    volatile uint32_t inner;
+
+    for (outer = 0; outer < milliseconds; outer++) {
+        for (inner = 0; inner < 40000u; inner++) {
+            __asm__ volatile ("nop");
+        }
+    }
 }
 
 void pit_sleep_ms(uint32_t milliseconds)
@@ -162,14 +169,7 @@ void pit_sleep_ms(uint32_t milliseconds)
 
     if (!pit_is_initialized()) {
         /* The PIT is not ready yet; use a conservative fallback delay. */
-        volatile uint32_t outer;
-        volatile uint32_t inner;
-
-        for (outer = 0; outer < milliseconds; outer++) {
-            for (inner = 0; inner < 40000u; inner++) {
-                __asm__ volatile ("nop");
-            }
-        }
+        pit_fallback_delay(milliseconds);
         return;
     }
 
@@ -197,8 +197,10 @@ void pit_sleep_ms(uint32_t milliseconds)
             __asm__ volatile ("hlt");
         }
     } else {
-        while ((pit_get_ticks() - start) < duration) {
-            pit_relax();
-        }
+        /*
+         * IRQ0 cannot run while IF is clear, so a tick-based wait here
+         * would never finish. Preserve the caller's interrupt state.
+         */
+        pit_fallback_delay(milliseconds);
     }
 }
