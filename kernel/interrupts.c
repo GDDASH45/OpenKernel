@@ -7,6 +7,7 @@
 #include <driver/keyboard.h>
 #include <kernel/process.h>
 #include <kernel/gdt.h>
+#include <memory/vmm.h>
 
 #define PIC1_COMMAND 0x20
 #define PIC1_DATA    0x21
@@ -122,6 +123,14 @@ uint32_t *interrupt_handler(void *registers) {
     struct kernel_panic_registers *frame =
         (struct kernel_panic_registers *)registers;
     uint32_t vector = frame->vector;
+
+    if (vector == 14) {
+        k_print("[VM] Page fault: ");
+        panic_print_hex("CR2", vmm_read_cr2());
+        panic_print_hex("ERROR", frame->error_code);
+        k_print("\n");
+        panic_at("Page fault", __FILE__, __LINE__, frame);
+    }
 
     if (vector < 32) {
         char message[] = "CPU exception 00";
