@@ -498,6 +498,13 @@ struct elf32_rel {
     uint32_t info;
 } __attribute__((packed));
 
+struct loader_mmap_entry {
+    uint32_t size;
+    uint64_t address;
+    uint64_t length;
+    uint32_t type;
+} __attribute__((packed));
+
 static uint32_t kaslr_random_state;
 static uint32_t kaslr_page_directory[PAGE_DIRECTORY_ENTRIES]
     __attribute__((aligned(4096)));
@@ -521,6 +528,33 @@ static int kaslr_range_available(const struct multiboot_info *boot_info,
                                  uint32_t first, uint32_t end) {
     if (first < KASLR_MINIMUM || end <= first || end > KASLR_MAXIMUM)
         return 0;
+
+    /* Only overlay addresses whose physical identity aliases are safe. */
+    if ((boot_info->flags & (1u << 6)) == 0 ||
+        boot_info->mmap_addr == 0 || boot_info->mmap_length == 0 ||
+        boot_info->mmap_addr > 0xFFFFFFFFu - boot_info->mmap_length)
+        return 0;
+    {
+        uint32_t offset = 0;
+        while (offset + sizeof(uint32_t) <= boot_info->mmap_length) {
+            const struct loader_mmap_entry *entry =
+                (const struct loader_mmap_entry *)(uintptr_t)
+                    (boot_info->mmap_addr + offset);
+            uint64_t region_end;
+            if (entry->size < 20u ||
+                entry->size > boot_info->mmap_length - offset -
+                              sizeof(uint32_t))
+                return 0;
+            region_end = entry->address + entry->length;
+            if (region_end < entry->address)
+                return 0;
+            if (entry->type != 1u &&
+                (uint64_t)first < region_end &&
+                entry->address < (uint64_t)end)
+                return 0;
+            offset += entry->size + sizeof(uint32_t);
+        }
+    }
 
     if ((uint32_t)(uintptr_t)boot_info >
         0xFFFFFFFFu - (uint32_t)sizeof(*boot_info))
