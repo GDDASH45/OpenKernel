@@ -82,15 +82,19 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr, uint32_t oem)
 
     struct multiboot_info *mbi = (struct multiboot_info *)multiboot_addr;
     assert(mbi != NULL);
+    printk("[BOOT] Initializing physical memory...\n");
     if (memory_init(mbi) != 0) {
         panic("Physical memory initialization failed!");
     }
+    printk("[BOOT] Physical memory initialized.\n");
     if (vmm_init() != 0) {
         panic("Virtual memory initialization failed!");
     }
+    printk("[BOOT] Virtual memory initialized.\n");
     gdt_init();
+    printk("[BOOT] GDT initialized.\n");
     if (!acpi_init()) {
-        k_print("[ACPI] Reset register unavailable; reboot will use the keyboard controller.\n");
+        printk("[ACPI] Reset register unavailable; reboot will use the keyboard controller.\n");
     }
     vdso_init();
     bootopts_init((mbi->flags & (1u << 2))
@@ -98,13 +102,16 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr, uint32_t oem)
     k_set_quiet(bootopts_quiet());
 
     interrupts_init();
+    printk("[BOOT] Interrupt descriptor table initialized.\n");
 
     if (init_keyboard() != 0) {
         panic("Keyboard initialization failed!");
     }
 
     vfs_init();
+    printk("[VFS] Virtual filesystem initialized.\n");
     module_system_init();
+    printk("[MODULE] Module subsystem initialized.\n");
     if (vfs_set_console(bootopts_console_path()) != 0) {
         panic("Invalid console= boot parameter!");
     }
@@ -145,9 +152,10 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr, uint32_t oem)
     uint32_t initrd_start = mod->mod_start;
 
     if (vfs_index_tar(initrd_start) < 0) {
-        k_print("[VFS] Could not index initramfs directories.\n");
+        printk("[VFS] Could not index initramfs directories.\n");
     } else {
         module_set_initrd(initrd_start);
+        printk("[MODULE] Loading modules from initramfs.\n");
         module_load_all_from_initrd();
     }
 

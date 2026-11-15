@@ -2,6 +2,7 @@
 #include <kernel/syscall.h>
 #include <kernel/user.h>
 #include <kernel.h>
+#include <write/write.h>
 #include <memory/page.h>
 #include <kernel/vdso.h>
 #include <kernel/gdt.h>
@@ -375,6 +376,8 @@ int32_t process_fork_current(void)
 
     parent_frame->eax = child->pid;
     child_frame->eax = 0;
+
+    printk("[PROC] fork: parent=%u child=%u\n", parent->pid, child->pid);
 
     return (int32_t)child->pid;
 }

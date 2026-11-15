@@ -1,5 +1,6 @@
 #include <kernel/module.h>
 #include <kernel.h>
+#include <write/write.h>
 #include <kernel/tar.h>
 #include <kernel/time.h>
 #include <memory/page.h>
@@ -156,9 +157,7 @@ static int module_insert_owned(kernel_module_t *descriptor, void *allocation,
     module_table[module_count].allocation = allocation;
     module_table[module_count].pages = pages;
     module_count++;
-    k_print("[MODULE] Inserted ");
-    k_print(descriptor->name);
-    k_print("\n");
+    printk("[MODULE] Inserted module '%s'.\n", descriptor->name);
     return 0;
 }
 
@@ -191,8 +190,10 @@ int module_remove(const char *name) {
             module_table[module_count].pages = 0;
             if (removed.allocation != 0 &&
                 memory_free_pages_at(removed.allocation, removed.pages) != 0) {
+                printk("[MODULE] Failed to release memory for '%s'.\n", name);
                 return -1;
             }
+            printk("[MODULE] Removed module '%s'.\n", name);
             return 0;
         }
     }
@@ -458,9 +459,7 @@ static void load_module_tree(struct vfs_node *directory, char *path,
             load_module_tree(child, path, child_path_length, depth + 1);
         } else if (has_module_extension(child->name)) {
             if (module_load_from_initrd(path) != 0) {
-                k_print("[MODULE] Failed to insert ");
-                k_print(path);
-                k_print("\n");
+                printk("[MODULE] Failed to insert '%s'.\n", path);
             }
         }
         path[path_length] = '\0';
