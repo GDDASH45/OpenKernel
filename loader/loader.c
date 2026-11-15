@@ -955,15 +955,11 @@ static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
     slide = choose_kernel_slide(boot_info, minimum, maximum);
     for (uint32_t index = 0; index < load_count; index++) {
         const struct elf32_program_header *program = headers[index];
-        uint32_t destination_address = program->physical_address + slide;
+        uint32_t destination_address = program->physical_address;
         volatile uint8_t *destination;
 
-        if (destination_address < program->physical_address ||
-            destination_address >= KERNEL_LOAD_LIMIT ||
-            program->memory_size > KERNEL_LOAD_LIMIT - destination_address ||
-            (slide != 0 &&
-             !kaslr_range_usable(boot_info, destination_address,
-                                 destination_address + program->memory_size)))
+        if (destination_address >= KERNEL_LOAD_LIMIT ||
+            program->memory_size > KERNEL_LOAD_LIMIT - destination_address)
             return -1;
         destination = (volatile uint8_t *)(uintptr_t)destination_address;
         for (uint32_t byte = 0; byte < program->file_size; byte++)
@@ -977,7 +973,10 @@ static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
                                  load_count, minimum, maximum, slide) != 0)
         return -1;
     if (header->entry + slide < header->entry ||
-        header->entry + slide >= KERNEL_LOAD_LIMIT)
+        header->entry + slide >= KASLR_MAXIMUM)
+        return -1;
+    if (slide != 0 &&
+        enable_kaslr_paging(minimum, maximum - minimum, slide) != 0)
         return -1;
     *entry = header->entry + slide;
     return 0;
