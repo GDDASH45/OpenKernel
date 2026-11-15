@@ -23,6 +23,7 @@
 #define ISO_SECTOR_SIZE     2048
 #define ISO_ROOT_RECORD     156
 #define ISO_MAX_DEPTH       32
+#define ISO_PATH_COMPONENT  1024
 
 static int atapi_device = -1;
 static uint16_t atapi_io_base;
@@ -30,6 +31,7 @@ static int iso_mounted;
 static uint32_t iso_volume_sectors;
 static uint32_t iso_root_lba;
 static uint32_t iso_root_size;
+static int iso_joliet;
 static uint8_t iso_sector[ISO_SECTOR_SIZE];
 static uint16_t atapi_identify_data[256];
 
@@ -248,22 +250,47 @@ static int iso_equal(const char *a, const char *b)
     return *a == 0 && *b == 0;
 }
 
+/*
+ * ISO9660 identifiers may carry a ;version suffix. Joliet identifiers are
+ * UCS-2BE (two bytes per character); the public path API uses UTF-8.
+ */
 static int iso_name_length(const uint8_t *record)
 {
     int length = record[32];
+    int i;
 
     if (length == 1 && (record[33] == 0 || record[33] == 1))
         return 0;
 
-    while (length > 0 && record[33 + length - 1] == ';')
-        --length;
+    if (iso_joliet) {
+        if (length & 1)
+            return -1;
 
-    while (length > 0 && record[33 + length - 1] >= '0' &&
-           record[33 + length - 1] <= '9')
-        --length;
+        i = length - 2;
+        while (i >= 0 && record[33 + i] == 0x00 &&
+               record[34 + i] >= '0' && record[34 + i] <= '9')
+            i -= 2;
+        if (i >= 0 && record[33 + i] == 0x00 &&
+            record[34 + i] == ';')
+            length = i;
 
-    if (length > 0 && record[33 + length - 1] == ';')
-        --length;
+        if (length >= 2 && record[33 + length - 2] == 0x00 &&
+            record[33 + length - 1] == '.')
+            length -= 2;
+
+        return length;
+    }
+
+    if (length >= 2 && record[33 + length - 2] == ';' &&
+        record[33 + length - 1] >= '0' &&
+        record[33 + length - 1] <= '9') {
+        i = length - 1;
+        while (i > 0 && record[33 + i - 1] >= '0' &&
+               record[33 + i - 1] <= '9')
+            --i;
+        if (i > 0 && record[33 + i - 1] == ';')
+            length = i - 1;
+    }
 
     if (length > 0 && record[33 + length - 1] == '.')
         --length;
@@ -271,25 +298,88 @@ static int iso_name_length(const uint8_t *record)
     return length;
 }
 
+static int iso_append_utf8(char *name, uint32_t capacity,
+                           uint32_t *used, uint32_t codepoint)
+{
+    if (codepoint <= 0x7F) {
+        if (*used + 1 >= capacity)
+            return -1;
+        name[(*used)++] = (char)codepoint;
+    } else if (codepoint <= 0x7FF) {
+        if (*used + 2 >= capacity)
+            return -1;
+        name[(*used)++] = (char)(0xC0 | (codepoint >> 6));
+        name[(*used)++] = (char)(0x80 | (codepoint & 0x3F));
+    } else if (codepoint <= 0xFFFF) {
+        if (codepoint >= 0xD800 && codepoint <= 0xDFFF)
+            return -1;
+        if (*used + 3 >= capacity)
+            return -1;
+        name[(*used)++] = (char)(0xE0 | (codepoint >> 12));
+        name[(*used)++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+        name[(*used)++] = (char)(0x80 | (codepoint & 0x3F));
+    } else if (codepoint <= 0x10FFFF) {
+        if (*used + 4 >= capacity)
+            return -1;
+        name[(*used)++] = (char)(0xF0 | (codepoint >> 18));
+        name[(*used)++] = (char)(0x80 | ((codepoint >> 12) & 0x3F));
+        name[(*used)++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+        name[(*used)++] = (char)(0x80 | (codepoint & 0x3F));
+    } else {
+        return -1;
+    }
+
+    return 0;
+}
+
 static int iso_record_name(const uint8_t *record, char *name, uint32_t capacity)
 {
     int length = iso_name_length(record);
+    uint32_t used = 0;
     int i;
 
-    if (length <= 0 || (uint32_t)length + 1 > capacity)
+    if (length <= 0)
         return -1;
 
-    for (i = 0; i < length; ++i) {
-        uint8_t c = record[33 + i];
-
-        if (c < 0x20 || c > 0x7E)
+    if (!iso_joliet) {
+        if ((uint32_t)length + 1 > capacity)
             return -1;
 
-        name[i] = (char)c;
+        for (i = 0; i < length; ++i) {
+            uint8_t c = record[33 + i];
+
+            if (c < 0x20 || c > 0x7E)
+                return -1;
+
+            name[used++] = (char)c;
+        }
+    } else {
+        for (i = 0; i < length; i += 2) {
+            uint32_t codepoint =
+                ((uint32_t)record[33 + i] << 8) | record[34 + i];
+
+            if (codepoint >= 0xD800 && codepoint <= 0xDBFF) {
+                uint32_t low;
+
+                if (i + 3 >= length)
+                    return -1;
+
+                low = ((uint32_t)record[35 + i] << 8) | record[36 + i];
+                if (low < 0xDC00 || low > 0xDFFF)
+                    return -1;
+
+                codepoint = 0x10000 +
+                    ((codepoint - 0xD800) << 10) + (low - 0xDC00);
+                i += 2;
+            }
+
+            if (iso_append_utf8(name, capacity, &used, codepoint) != 0)
+                return -1;
+        }
     }
 
-    name[length] = 0;
-    return length;
+    name[used] = 0;
+    return (int)used;
 }
 
 /*
@@ -310,7 +400,7 @@ static int iso_find_entry(
         uint32_t sector_offset = offset % ISO_SECTOR_SIZE;
         uint8_t record_length;
         uint8_t *record;
-        char name[256];
+        char name[ISO_PATH_COMPONENT];
         int name_length;
 
         if (atapi_read_block(sector_lba, iso_sector) != 0)
@@ -379,7 +469,7 @@ static int iso_resolve(
     }
 
     while (*p) {
-        char component[256];
+        char component[ISO_PATH_COMPONENT];
         uint32_t length = 0;
         uint32_t next_lba;
         uint32_t next_size;
@@ -426,9 +516,18 @@ int iso9660_mount(void)
     uint32_t lba;
     int device;
     int channel;
+    int have_primary = 0;
+    int have_joliet = 0;
+    uint32_t primary_volume_sectors = 0;
+    uint32_t primary_root_lba = 0;
+    uint32_t primary_root_size = 0;
+    uint32_t joliet_volume_sectors = 0;
+    uint32_t joliet_root_lba = 0;
+    uint32_t joliet_root_size = 0;
     static const uint16_t channels[] = { 0x1F0, 0x170 };
 
     iso_mounted = 0;
+    iso_joliet = 0;
     atapi_device = -1;
 
     for (channel = 0; channel < 2 && atapi_device < 0; ++channel) {
@@ -445,6 +544,9 @@ int iso9660_mount(void)
 
     for (lba = 16; lba < 80; ++lba) {
         uint8_t *descriptor;
+        uint32_t volume_sectors;
+        uint32_t root_lba;
+        uint32_t root_size;
 
         if (atapi_read_block(lba, iso_sector) != 0)
             return -1;
@@ -462,26 +564,56 @@ int iso9660_mount(void)
         if (descriptor[0] == 255)
             break;
 
-        if (descriptor[0] != 1)
+        if (descriptor[0] != 1 && descriptor[0] != 2)
             continue;
 
-        iso_volume_sectors = iso_le32(descriptor + 80);
-        iso_root_lba = iso_le32(descriptor + ISO_ROOT_RECORD + 2);
-        iso_root_size = iso_le32(descriptor + ISO_ROOT_RECORD + 10);
+        volume_sectors = iso_le32(descriptor + 80);
+        root_lba = iso_le32(descriptor + ISO_ROOT_RECORD + 2);
+        root_size = iso_le32(descriptor + ISO_ROOT_RECORD + 10);
 
-        if (iso_volume_sectors == 0 ||
-            iso_root_lba >= iso_volume_sectors ||
-            iso_root_size == 0 ||
-            (iso_root_size != 0 &&
-             (iso_root_size - 1) / ISO_SECTOR_SIZE >= iso_volume_sectors) ||
+        if (volume_sectors == 0 || root_lba >= volume_sectors ||
+            root_size == 0 ||
+            (root_size - 1) / ISO_SECTOR_SIZE >= volume_sectors ||
             iso_le16(descriptor + 128) != ISO_SECTOR_SIZE)
-            return -1;
+            continue;
 
-        iso_mounted = 1;
-        return 0;
+        if (descriptor[0] == 1) {
+            primary_volume_sectors = volume_sectors;
+            primary_root_lba = root_lba;
+            primary_root_size = root_size;
+            have_primary = 1;
+        } else if (descriptor[88] == '%' && descriptor[89] == '/' &&
+                   (descriptor[90] == '@' ||
+                    descriptor[90] == 'C' ||
+                    descriptor[90] == 'E')) {
+            /*
+             * Joliet escape sequences identify Supplementary Volume
+             * Descriptors: %/@ (Level 1), %/C (Level 2), or %/E (Level 3).
+             * Prefer the last recognized SVD if several are present.
+             */
+            joliet_volume_sectors = volume_sectors;
+            joliet_root_lba = root_lba;
+            joliet_root_size = root_size;
+            have_joliet = 1;
+        }
     }
 
-    return -1;
+    if (have_joliet) {
+        iso_volume_sectors = joliet_volume_sectors;
+        iso_root_lba = joliet_root_lba;
+        iso_root_size = joliet_root_size;
+        iso_joliet = 1;
+    } else if (have_primary) {
+        iso_volume_sectors = primary_volume_sectors;
+        iso_root_lba = primary_root_lba;
+        iso_root_size = primary_root_size;
+        iso_joliet = 0;
+    } else {
+        return -1;
+    }
+
+    iso_mounted = 1;
+    return 0;
 }
 
 int iso9660_is_mounted(void)
