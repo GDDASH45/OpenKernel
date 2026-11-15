@@ -37,7 +37,7 @@ static int write_directory(uint32_t inode_number,
     struct sokfs_inode inode;
     uint8_t sector[SOKFS_SECTOR_SIZE];
     if (sokfs_internal_read_inode(inode_number, &inode) != 0 ||
-        inode->type != SOKFS_TYPE_DIRECTORY)
+        inode.type != SOKFS_TYPE_DIRECTORY)
         return -1;
     for (uint32_t i = 0; i < SOKFS_DIRECTORY_ENTRIES; i++)
         for (uint32_t b = 0; b < SOKFS_ENTRY_SIZE; b++)
@@ -166,6 +166,7 @@ int sokfs_fileops_create(const char *path, uint32_t mode, uint32_t type)
     uint32_t entry_slot = SOKFS_DIRECTORY_ENTRIES;
     uint32_t slot;
     uint8_t zero[SOKFS_SECTOR_SIZE];
+    uint32_t data_sector;
 
     if ((type != SOKFS_TYPE_FILE && type != SOKFS_TYPE_DIRECTORY) ||
         resolve_parent(path, &parent, name, &name_length) != 0 ||
@@ -196,8 +197,9 @@ int sokfs_fileops_create(const char *path, uint32_t mode, uint32_t type)
     inode.start_sector = 0;
     inode.sector_count = 0;
     if (type == SOKFS_TYPE_DIRECTORY) {
-        if (sokfs_internal_alloc(1, &inode.start_sector) != 0)
+        if (sokfs_internal_alloc(1, &data_sector) != 0)
             return -1;
+        inode.start_sector = data_sector;
         inode.sector_count = 1;
         if (ata_write_sector(sokfs_internal_volume_start() +
                              inode.start_sector, zero) != 0)
