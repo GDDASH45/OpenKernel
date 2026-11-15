@@ -5,6 +5,7 @@
 #include <memory/page.h>
 #include <kernel/vdso.h>
 #include <kernel/gdt.h>
+#include <memory/address_space.h>
 
 static uint32_t current_pid;
 static uint32_t next_pid;
@@ -125,6 +126,7 @@ void process_system_init(void)
         process_table[index].kernel_stack_size = 0;
         process_table[index].interrupt_frame = 0;
         process_table[index].fork_child = 0;
+        process_table[index].address_space = 0;
 
         for (uint32_t word = 0; word < 6; word++) {
             process_table[index].context[word] = 0;
@@ -154,6 +156,14 @@ uint32_t process_enter_program(void)
     struct process *process = process_alloc();
 
     if (process == 0) {
+        return previous_pid;
+    }
+
+    process->address_space = address_space_create();
+    if (process->address_space == 0 ||
+        address_space_activate(process->address_space) != 0) {
+        address_space_destroy(process->address_space);
+        process->address_space = 0;
         return previous_pid;
     }
 
@@ -191,6 +201,9 @@ uint32_t process_enter_program(void)
 
 void process_leave_program(uint32_t previous_pid)
 {
+    struct address_space *old_address_space =
+        current_process != 0 ? current_process->address_space : 0;
+
     if (current_process != 0 &&
         current_process->pid != previous_pid &&
         !current_process->fork_child) {
@@ -202,6 +215,7 @@ void process_leave_program(uint32_t previous_pid)
         current_process->exit_status = 0;
         current_process->interrupt_frame = 0;
         current_process->fork_child = 0;
+        current_process->address_space = 0;
         current_process->next = 0;
     }
 
@@ -215,6 +229,12 @@ void process_leave_program(uint32_t previous_pid)
     }
 
     current_process->state = PROCESS_STATE_RUNNING;
+    if (address_space_activate(current_process->address_space) != 0) {
+        panic("Could not restore process address space!");
+    }
+    if (old_address_space != 0 && old_address_space != current_process->address_space) {
+        address_space_destroy(old_address_space);
+    }
     if (current_process->kernel_stack != 0) {
         gdt_set_kernel_stack(current_process->kernel_stack +
                              current_process->kernel_stack_size);
@@ -330,6 +350,7 @@ int32_t process_fork_current(void)
         (uint32_t *)(destination + frame_offset);
 
     child->fork_child = 1;
+    child->address_space = 0;
     child->next = 0;
 
     struct kernel_panic_registers *parent_frame =
@@ -402,6 +423,10 @@ uint32_t *process_interrupt_return(
 
     current_process = next;
     current_pid = next->pid;
+
+    if (address_space_activate(next->address_space) != 0) {
+        panic("Could not switch process address space!");
+    }
 
     vdso_set_current_pid(current_pid);
 
