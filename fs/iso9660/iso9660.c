@@ -2,14 +2,14 @@
 #include <kernel/ports.h>
 #include <stdint.h>
 
-#define ATAPI_DATA          0x1F0
-#define ATAPI_ERROR         0x1F1
-#define ATAPI_FEATURES      0x1F1
-#define ATAPI_BYTE_COUNT_L  0x1F4
-#define ATAPI_BYTE_COUNT_H  0x1F5
-#define ATAPI_DRIVE         0x1F6
-#define ATAPI_STATUS        0x1F7
-#define ATAPI_COMMAND       0x1F7
+#define ATAPI_DATA          0
+#define ATAPI_ERROR         1
+#define ATAPI_FEATURES      1
+#define ATAPI_BYTE_COUNT_L  4
+#define ATAPI_BYTE_COUNT_H  5
+#define ATAPI_DRIVE         6
+#define ATAPI_STATUS        7
+#define ATAPI_COMMAND       7
 
 #define ATAPI_STATUS_ERROR  0x01
 #define ATAPI_STATUS_DRQ    0x08
@@ -25,6 +25,7 @@
 #define ISO_MAX_DEPTH       32
 
 static int atapi_device = -1;
+static uint16_t atapi_io_base;
 static int iso_mounted;
 static uint32_t iso_volume_sectors;
 static uint32_t iso_root_lba;
@@ -52,12 +53,22 @@ static void atapi_outsw(uint16_t port, const uint16_t *buffer, uint32_t count)
     );
 }
 
+static uint8_t atapi_in(uint16_t reg)
+{
+    return port_byte_in((uint16_t)(atapi_io_base + reg));
+}
+
+static void atapi_out(uint16_t reg, uint8_t value)
+{
+    port_byte_out((uint16_t)(atapi_io_base + reg), value);
+}
+
 static void atapi_delay(void)
 {
-    (void)port_byte_in(ATAPI_STATUS);
-    (void)port_byte_in(ATAPI_STATUS);
-    (void)port_byte_in(ATAPI_STATUS);
-    (void)port_byte_in(ATAPI_STATUS);
+    (void)atapi_in(ATAPI_STATUS);
+    (void)atapi_in(ATAPI_STATUS);
+    (void)atapi_in(ATAPI_STATUS);
+    (void)atapi_in(ATAPI_STATUS);
 }
 
 static int atapi_wait(uint8_t required)
@@ -65,7 +76,7 @@ static int atapi_wait(uint8_t required)
     uint32_t timeout = ATAPI_TIMEOUT;
 
     while (timeout-- != 0) {
-        uint8_t status = port_byte_in(ATAPI_STATUS);
+        uint8_t status = atapi_in(ATAPI_STATUS);
 
         if (status == 0x00 || status == 0xFF)
             return -1;
@@ -74,7 +85,7 @@ static int atapi_wait(uint8_t required)
             continue;
 
         if (status & ATAPI_STATUS_ERROR) {
-            (void)port_byte_in(ATAPI_ERROR);
+            (void)atapi_in(ATAPI_ERROR);
             return -1;
         }
 
@@ -87,7 +98,7 @@ static int atapi_wait(uint8_t required)
 
 static void atapi_select(int device)
 {
-    port_byte_out(ATAPI_DRIVE, (uint8_t)(0xA0 | (device ? 0x10 : 0)));
+    atapi_out(ATAPI_DRIVE, (uint8_t)(0xA0 | (device ? 0x10 : 0)));
     atapi_delay();
 }
 
@@ -95,20 +106,21 @@ static void atapi_select(int device)
  * IDENTIFY PACKET DEVICE distinguishes ATAPI devices from ATA disks.
  * The identify payload is consumed so the device is left ready for commands.
  */
-static int atapi_probe(int device)
+static int atapi_probe(uint16_t io_base, int device)
 {
+    atapi_io_base = io_base;
     atapi_select(device);
 
-    if (port_byte_in(ATAPI_STATUS) == 0x00)
+    if (atapi_in(ATAPI_STATUS) == 0x00)
         return -1;
 
-    port_byte_out(ATAPI_FEATURES, 0);
-    port_byte_out(ATAPI_COMMAND, ATAPI_CMD_IDENTIFY);
+    atapi_out(ATAPI_FEATURES, 0);
+    atapi_out(ATAPI_COMMAND, ATAPI_CMD_IDENTIFY);
 
     if (atapi_wait(ATAPI_STATUS_DRQ) != 0)
         return -1;
 
-    atapi_insw(ATAPI_DATA, atapi_identify_data, 256);
+    atapi_insw((uint16_t)(atapi_io_base + ATAPI_DATA), atapi_identify_data, 256);
 
     return 0;
 }
@@ -145,15 +157,15 @@ static int atapi_read_block(uint32_t lba, void *buffer)
     if (atapi_wait(0) != 0)
         return -1;
 
-    port_byte_out(ATAPI_FEATURES, 0);
-    port_byte_out(ATAPI_BYTE_COUNT_L, 0x00);
-    port_byte_out(ATAPI_BYTE_COUNT_H, 0x08);
-    port_byte_out(ATAPI_COMMAND, ATAPI_CMD_PACKET);
+    atapi_out(ATAPI_FEATURES, 0);
+    atapi_out(ATAPI_BYTE_COUNT_L, 0x00);
+    atapi_out(ATAPI_BYTE_COUNT_H, 0x08);
+    atapi_out(ATAPI_COMMAND, ATAPI_CMD_PACKET);
 
     if (atapi_wait(ATAPI_STATUS_DRQ) != 0)
         return -1;
 
-    atapi_outsw(ATAPI_DATA, (const uint16_t *)packet, 6);
+    atapi_outsw((uint16_t)(atapi_io_base + ATAPI_DATA), (const uint16_t *)packet, 6);
 
     timeout = ATAPI_TIMEOUT;
 
@@ -161,7 +173,7 @@ static int atapi_read_block(uint32_t lba, void *buffer)
         uint16_t byte_count;
         uint32_t words;
 
-        status = port_byte_in(ATAPI_STATUS);
+        status = atapi_in(ATAPI_STATUS);
 
         if (status == 0x00 || status == 0xFF)
             return -1;
@@ -170,7 +182,7 @@ static int atapi_read_block(uint32_t lba, void *buffer)
             continue;
 
         if (status & ATAPI_STATUS_ERROR) {
-            (void)port_byte_in(ATAPI_ERROR);
+            (void)atapi_in(ATAPI_ERROR);
             return -1;
         }
 
@@ -179,8 +191,8 @@ static int atapi_read_block(uint32_t lba, void *buffer)
             break;
         }
 
-        byte_count = (uint16_t)port_byte_in(ATAPI_BYTE_COUNT_L);
-        byte_count |= (uint16_t)port_byte_in(ATAPI_BYTE_COUNT_H) << 8;
+        byte_count = (uint16_t)atapi_in(ATAPI_BYTE_COUNT_L);
+        byte_count |= (uint16_t)atapi_in(ATAPI_BYTE_COUNT_H) << 8;
 
         if (byte_count == 0 || (byte_count & 1))
             return -1;
@@ -191,7 +203,7 @@ static int atapi_read_block(uint32_t lba, void *buffer)
             return -1;
 
         atapi_insw(
-            ATAPI_DATA,
+            (uint16_t)(atapi_io_base + ATAPI_DATA),
             (uint16_t *)((uint8_t *)buffer + transferred),
             words
         );
@@ -413,14 +425,18 @@ int iso9660_mount(void)
 {
     uint32_t lba;
     int device;
+    int channel;
+    static const uint16_t channels[] = { 0x1F0, 0x170 };
 
     iso_mounted = 0;
     atapi_device = -1;
 
-    for (device = 0; device < 2; ++device) {
-        if (atapi_probe(device) == 0) {
-            atapi_device = device;
-            break;
+    for (channel = 0; channel < 2 && atapi_device < 0; ++channel) {
+        for (device = 0; device < 2; ++device) {
+            if (atapi_probe(channels[channel], device) == 0) {
+                atapi_device = device;
+                break;
+            }
         }
     }
 
