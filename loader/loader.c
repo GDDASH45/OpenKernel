@@ -528,6 +528,9 @@ static int kaslr_range_usable(const struct multiboot_info *boot_info,
     if ((boot_info->flags & (1u << 6)) != 0 &&
         boot_info->mmap_addr != 0 && boot_info->mmap_length != 0) {
         uint32_t offset = 0;
+        if (boot_info->mmap_addr >
+            0xFFFFFFFFu - boot_info->mmap_length)
+            return 0;
         while (offset + sizeof(uint32_t) <= boot_info->mmap_length) {
             const struct loader_mmap_entry *entry =
                 (const struct loader_mmap_entry *)(uintptr_t)
