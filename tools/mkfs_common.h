@@ -2,6 +2,7 @@
 #define OPENKERNEL_MKFS_COMMON_H
 
 #include <errno.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
