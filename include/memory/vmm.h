@@ -19,6 +19,9 @@ int vmm_init(void);
 struct address_space *vmm_address_space_create(void);
 void vmm_address_space_destroy(struct address_space *space);
 int vmm_address_space_activate(struct address_space *space);
+struct address_space *vmm_address_space_clone(struct address_space *space);
+int vmm_copy_from_user(struct address_space *space, void *destination,
+                       uint32_t source, uint32_t size);
 int vmm_map_page(struct address_space *space, uint32_t virtual_address,
                  uint32_t physical_address, uint32_t flags);
 int vmm_unmap_page(struct address_space *space, uint32_t virtual_address);
