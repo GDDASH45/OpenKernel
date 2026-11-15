@@ -14,6 +14,8 @@ struct okfs_superblock {
     uint32_t reserved[122];
 } __attribute__((packed));
 
+// hi
+
 static int mounted;
 static int mounted_format;
 
