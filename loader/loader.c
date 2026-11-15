@@ -555,6 +555,8 @@ static int kaslr_range_available(const struct multiboot_info *boot_info,
                 return 0;
             offset += entry->size + sizeof(uint32_t);
         }
+        if (offset != boot_info->mmap_length)
+            return 0;
     }
 
     if ((uint32_t)(uintptr_t)boot_info >
