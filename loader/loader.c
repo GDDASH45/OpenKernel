@@ -465,7 +465,7 @@ static int inflate_gzip(const uint8_t *input, uint32_t input_size,
 #define ELF_R_386_32 1u
 #define ELF_R_386_PC32 2u
 #define ELF_R_386_PLT32 4u
-#define KASLR_MINIMUM 0x80000000u
+#define KASLR_MINIMUM 0x40000000u
 #define KASLR_MAXIMUM 0xC0000000u
 #define KASLR_GRANULARITY 0x00400000u
 #define PAGE_DIRECTORY_ENTRIES 1024u
