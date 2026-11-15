@@ -595,8 +595,26 @@ static int kaslr_range_available(const struct multiboot_info *boot_info,
             return 0;
     }
 
+    if ((boot_info->flags & (1u << 8)) != 0 &&
+        boot_info->config_table != 0) {
+        if (boot_info->config_table > 0xFFFFFFFFu - 16u ||
+            range_overlaps(first, end, boot_info->config_table,
+                           boot_info->config_table + 16u))
+            return 0;
+    }
+
+    if ((boot_info->flags & (1u << 10)) != 0 &&
+        boot_info->apm_table != 0) {
+        if (boot_info->apm_table > 0xFFFFFFFFu - 20u ||
+            range_overlaps(first, end, boot_info->apm_table,
+                           boot_info->apm_table + 20u))
+            return 0;
+    }
+
     if ((boot_info->flags & (1u << 11)) != 0) {
-        if (range_overlaps(first, end, boot_info->vbe_control_info,
+        if (boot_info->vbe_control_info > 0xFFFFFFFFu - 512u ||
+            boot_info->vbe_mode_info > 0xFFFFFFFFu - 256u ||
+            range_overlaps(first, end, boot_info->vbe_control_info,
                            boot_info->vbe_control_info + 512u) ||
             range_overlaps(first, end, boot_info->vbe_mode_info,
                            boot_info->vbe_mode_info + 256u))
