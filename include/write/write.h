@@ -10,5 +10,6 @@ void k_clear_screen(void);
 void k_print_char(char c);
 void k_print(const char *str);
 void k_set_quiet(int quiet);
+void printk(const char *format, ...);
 
 #endif

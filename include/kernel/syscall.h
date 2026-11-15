@@ -38,8 +38,10 @@
 #define OK_SYS_NET_UDP_SEND 18u
 #define OK_SYS_NET_UDP_RECEIVE 19u
 #define OK_SYS_NET_GET_IPV4 20u
-#define OK_SYS_MODULE_LOAD 21u
-#define OK_SYS_MODULE_UNLOAD 22u
+#define OK_SYS_MODULE_INSERT 21u
+#define OK_SYS_MODULE_REMOVE 22u
+#define OK_SYS_MODULE_LOAD OK_SYS_MODULE_INSERT
+#define OK_SYS_MODULE_UNLOAD OK_SYS_MODULE_REMOVE
 #define OK_SYS_VDSO 23u
 #define OK_SYS_REBOOT 24u
 #define OK_SYS_FILE_READ 25u
@@ -70,6 +72,8 @@ struct ok_vdso_page {
 #define OK_EIO    5
 #define OK_ENOSYS 38
 #define OK_ENOMEM 12
+#define OK_EPERM 1
+#define OK_ENAMETOOLONG 36
 
 int32_t syscall_dispatch(uint32_t number, uint32_t arg1, uint32_t arg2,
 						 uint32_t arg3);

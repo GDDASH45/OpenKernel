@@ -162,6 +162,71 @@ void vmm_address_space_destroy(struct address_space *space)
     memory_free_page(space);
 }
 
+struct address_space *vmm_address_space_clone(struct address_space *source)
+{
+    struct address_space *destination;
+
+    if (source == 0 || source->directory == 0 ||
+        source->directory != active_directory) {
+        return 0;
+    }
+
+    destination = vmm_address_space_create();
+    if (destination == 0) {
+        return 0;
+    }
+
+    for (uint32_t directory_index = VMM_USER_BASE >> 22;
+         directory_index < PAGE_DIRECTORY_ENTRIES;
+         directory_index++) {
+        uint32_t directory_entry = source->directory[directory_index];
+        uint32_t *source_table;
+
+        if ((directory_entry & VMM_PAGE_PRESENT) == 0 ||
+            (directory_entry & PAGE_USER_BIT) == 0) {
+            continue;
+        }
+        if ((directory_entry & PAGE_LARGE) != 0) {
+            vmm_address_space_destroy(destination);
+            return 0;
+        }
+
+        source_table = (uint32_t *)(uintptr_t)(directory_entry & PAGE_ADDRESS);
+        for (uint32_t table_index = 0; table_index < PAGE_TABLE_ENTRIES;
+             table_index++) {
+            uint32_t page_entry = source_table[table_index];
+            uint32_t virtual_address =
+                (directory_index << 22) | (table_index << 12);
+            void *page;
+            uint32_t flags;
+
+            if ((page_entry & (VMM_PAGE_PRESENT | PAGE_USER_BIT)) !=
+                (VMM_PAGE_PRESENT | PAGE_USER_BIT)) {
+                continue;
+            }
+
+            page = memory_alloc_page();
+            if (page == 0) {
+                vmm_address_space_destroy(destination);
+                return 0;
+            }
+            copy_page(page, (const void *)(uintptr_t)virtual_address);
+
+            flags = VMM_PAGE_USER | VMM_PAGE_OWNED;
+            if (page_entry & VMM_PAGE_WRITE) {
+                flags |= VMM_PAGE_WRITE;
+            }
+            if (vmm_map_page(destination, virtual_address,
+                             (uint32_t)(uintptr_t)page, flags) != 0) {
+                memory_free_page(page);
+                vmm_address_space_destroy(destination);
+                return 0;
+            }
+        }
+    }
+    return destination;
+}
+
 int vmm_address_space_activate(struct address_space *space)
 {
     uint32_t *directory = space != 0 ? space->directory : kernel_directory;
@@ -177,6 +242,53 @@ int vmm_address_space_activate(struct address_space *space)
         active_directory = directory;
     }
 
+    return 0;
+}
+
+int vmm_copy_from_user(struct address_space *space, void *destination,
+                       uint32_t source, uint32_t size)
+{
+    uint8_t *output = (uint8_t *)destination;
+
+    if (size == 0) {
+        return 0;
+    }
+    if (space == 0 || space->directory == 0 || destination == 0 ||
+        source < VMM_USER_BASE ||
+        source > UINT32_MAX - (size - 1u)) {
+        return -1;
+    }
+
+    while (size != 0) {
+        uint32_t directory_entry = space->directory[source >> 22];
+        uint32_t page_offset = source & (MEMORY_PAGE_SIZE - 1u);
+        uint32_t chunk = MEMORY_PAGE_SIZE - page_offset;
+        uint32_t *table;
+        uint32_t page_entry;
+
+        if ((directory_entry & (VMM_PAGE_PRESENT | PAGE_USER_BIT)) !=
+            (VMM_PAGE_PRESENT | PAGE_USER_BIT) ||
+            (directory_entry & PAGE_LARGE) != 0) {
+            return -1;
+        }
+        table = (uint32_t *)(uintptr_t)(directory_entry & PAGE_ADDRESS);
+        page_entry = table[(source >> 12) & 0x3FFu];
+        if ((page_entry & (VMM_PAGE_PRESENT | PAGE_USER_BIT)) !=
+            (VMM_PAGE_PRESENT | PAGE_USER_BIT)) {
+            return -1;
+        }
+        if (chunk > size) {
+            chunk = size;
+        }
+
+        const uint8_t *input = (const uint8_t *)(uintptr_t)source;
+        for (uint32_t index = 0; index < chunk; index++) {
+            output[index] = input[index];
+        }
+        output += chunk;
+        source += chunk;
+        size -= chunk;
+    }
     return 0;
 }
 

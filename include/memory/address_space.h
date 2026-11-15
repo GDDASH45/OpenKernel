@@ -13,6 +13,11 @@ static inline void address_space_destroy(struct address_space *space)
     vmm_address_space_destroy(space);
 }
 
+static inline struct address_space *address_space_clone(struct address_space *space)
+{
+    return vmm_address_space_clone(space);
+}
+
 static inline int address_space_activate(struct address_space *space)
 {
     return vmm_address_space_activate(space);
