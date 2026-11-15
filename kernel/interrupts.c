@@ -125,10 +125,8 @@ uint32_t *interrupt_handler(void *registers) {
     uint32_t vector = frame->vector;
 
     if (vector == 14) {
-        k_print("[VM] Page fault: ");
-        panic_print_hex("CR2", vmm_read_cr2());
-        panic_print_hex("ERROR", frame->error_code);
-        k_print("\n");
+        printk("[VM] Page fault: CR2=0x%08x ERROR=0x%08x\n",
+               vmm_read_cr2(), frame->error_code);
         panic_at("Page fault", __FILE__, __LINE__, frame);
     }
 
