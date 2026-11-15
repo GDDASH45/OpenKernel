@@ -97,8 +97,8 @@ or reformat the existing OKFS2 store.
 ## Read-only ISO9660
 
 The ISO9660 driver in `fs/iso9660/iso9660.c` uses primary-channel ATAPI
-PACKET commands to read 2048-byte CD-ROM logical blocks. It probes the
-primary-channel master and slave, then locates a primary volume descriptor
+PACKET commands to read 2048-byte CD-ROM logical blocks. It probes master and slave devices on both
+primary and secondary IDE channels, then locates a primary volume descriptor
 starting at logical block 16.
 
 The public API is `<fs/iso9660/iso9660.h>`:
@@ -114,5 +114,4 @@ The public API is `<fs/iso9660/iso9660.h>`:
 This is an initial read-only implementation. It supports primary volume
 descriptors and ordinary ISO directory records. Joliet names, Rock Ridge
 extensions, multi-extent files, writes, VFS integration, and file-descriptor
-syscalls are not implemented. It currently probes only the primary IDE
-channel. ISO9660 support is independent of FAT16 and does not modify OKFS2.
+syscalls are not implemented.  ISO9660 support is independent of FAT16 and does not modify OKFS2.
