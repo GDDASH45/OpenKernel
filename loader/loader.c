@@ -595,6 +595,25 @@ static int kaslr_range_available(const struct multiboot_info *boot_info,
         }
     }
 
+    if ((boot_info->flags & (1u << 4)) != 0) {
+        uint32_t symbols_size = boot_info->syms[0] + boot_info->syms[1];
+        if (symbols_size < boot_info->syms[0] ||
+            boot_info->syms[2] > 0xFFFFFFFFu - symbols_size ||
+            range_overlaps(first, end, boot_info->syms[2],
+                           boot_info->syms[2] + symbols_size))
+            return 0;
+    } else if ((boot_info->flags & (1u << 5)) != 0) {
+        uint32_t symbols_size;
+        if (boot_info->syms[1] != 0 &&
+            boot_info->syms[0] > 0xFFFFFFFFu / boot_info->syms[1])
+            return 0;
+        symbols_size = boot_info->syms[0] * boot_info->syms[1];
+        if (boot_info->syms[2] > 0xFFFFFFFFu - symbols_size ||
+            range_overlaps(first, end, boot_info->syms[2],
+                           boot_info->syms[2] + symbols_size))
+            return 0;
+    }
+
     if ((boot_info->flags & (1u << 2)) != 0 &&
         boot_info->cmdline != 0) {
         const char *command_line =
@@ -667,6 +686,18 @@ static int kaslr_range_available(const struct multiboot_info *boot_info,
         if ((uint64_t)first < framebuffer_end &&
             boot_info->framebuffer_addr < (uint64_t)end)
             return 0;
+        if (boot_info->framebuffer_type == 0 &&
+            boot_info->framebuffer_palette_num_colors != 0) {
+            uint32_t palette_size =
+                (uint32_t)boot_info->framebuffer_palette_num_colors * 3u;
+            if (boot_info->framebuffer_palette_addr >
+                    0xFFFFFFFFu - palette_size ||
+                range_overlaps(first, end,
+                               boot_info->framebuffer_palette_addr,
+                               boot_info->framebuffer_palette_addr +
+                                   palette_size))
+                return 0;
+        }
     }
     return 1;
 }
