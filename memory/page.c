@@ -1,12 +1,14 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <memory/page.h>
+#include <kernel/kaslr.h>
 #include <kernel/multiboot.h>
 
 #define PAGE_COUNT (0x100000000ull / MEMORY_PAGE_SIZE)
 #define PAGE_BITMAP_WORDS (PAGE_COUNT / 32u)
 #define PAGE_DIRECTORY_ENTRIES 1024u
 #define PAGE_SIZE_4M 0x00400000u
+#define KERNEL_PHYSICAL_BASE KASLR_KERNEL_LINK_BASE
 #define MULTIBOOT_INFO_MEMORY_MAP (1u << 6)
 
 static uint32_t page_bitmap[PAGE_BITMAP_WORDS];
@@ -74,12 +76,54 @@ static void reserve_range(uint64_t start, uint64_t length) {
     }
 }
 
+static uint32_t kernel_image_size(void) {
+    uintptr_t start = (uintptr_t)&__kernel_start;
+    uintptr_t end = (uintptr_t)&__kernel_end;
+    return end > start ? (uint32_t)(end - start) : 0;
+}
+
+static uint32_t kernel_alias_reservation_size(void) {
+    uint32_t size = kernel_image_size();
+    uint32_t rounded = (size + PAGE_SIZE_4M - 1u) &
+                       ~(PAGE_SIZE_4M - 1u);
+    return rounded >= size ? rounded : 0;
+}
+
+uint32_t memory_kernel_virtual_to_physical(const void *address) {
+    uintptr_t value = (uintptr_t)address;
+    uintptr_t start = (uintptr_t)&__kernel_start;
+    uintptr_t end = (uintptr_t)&__kernel_end;
+
+    if (value >= start && value < end)
+        return KERNEL_PHYSICAL_BASE + (uint32_t)(value - start);
+    return (uint32_t)value;
+}
+
 static void enable_identity_paging(void) {
+    uint32_t kernel_virtual_base = (uint32_t)(uintptr_t)&__kernel_start;
+    uint32_t image_size = kernel_image_size();
+
     for (uint32_t index = 0; index < PAGE_DIRECTORY_ENTRIES; index++) {
         page_directory[index] = (index * PAGE_SIZE_4M) | 0x083u;
     }
 
-    uint32_t directory_address = (uint32_t)(uintptr_t)page_directory;
+    if (kernel_virtual_base != KERNEL_PHYSICAL_BASE && image_size != 0) {
+        for (uint32_t offset = 0; offset < image_size;
+             offset += PAGE_SIZE_4M) {
+            uint32_t virtual_address = kernel_virtual_base + offset;
+            uint32_t physical_address = KERNEL_PHYSICAL_BASE + offset;
+            uint32_t directory_index = virtual_address >> 22;
+
+            if (directory_index < PAGE_DIRECTORY_ENTRIES &&
+                physical_address < 0xC0000000u) {
+                page_directory[directory_index] =
+                    physical_address | 0x083u;
+            }
+        }
+    }
+
+    uint32_t directory_address =
+        memory_kernel_virtual_to_physical(page_directory);
     uint32_t cr4;
     uint32_t cr0;
 
@@ -160,8 +204,12 @@ int memory_init(const struct multiboot_info *boot_info) {
     }
 
     reserve_range(0, 0x100000u);
-    reserve_range((uintptr_t)&__kernel_start,
-                  (uintptr_t)&__kernel_end - (uintptr_t)&__kernel_start);
+    reserve_range(KERNEL_PHYSICAL_BASE, kernel_image_size());
+    /* The virtual alias replaces these identity-mapped physical pages. */
+    if ((uintptr_t)&__kernel_start != KERNEL_PHYSICAL_BASE) {
+        reserve_range((uintptr_t)&__kernel_start,
+                      kernel_alias_reservation_size());
+    }
     reserve_range((uintptr_t)boot_info, sizeof(*boot_info));
     if ((boot_info->flags & MULTIBOOT_INFO_MEMORY_MAP) != 0) {
         reserve_range(boot_info->mmap_addr, boot_info->mmap_length);

@@ -48,7 +48,7 @@ LDFLAGS = -m32 -T linker.ld -ffreestanding -O2 \
 	-nostdlib -fno-pie -no-pie
 
 PLAIN_LDFLAGS = -m32 -T linker_plain.ld -ffreestanding -O2 \
-	-nostdlib -fno-pie -no-pie -Wl,-e,_start
+	-nostdlib -fno-pie -no-pie -Wl,-e,_start -Wl,--emit-relocs
 
 ASFLAGS = -f elf32
 HOST_CFLAGS = -std=gnu99 -O2 -Wall -Wextra -Iinclude
@@ -301,6 +301,11 @@ $(PLAIN_KERNEL_ELF): $(OPENKERNEL_A) linker_plain.ld
 	@echo "LD $@"
 	@$(CC) $(PLAIN_LDFLAGS) -o "$@" $(PLAIN_OBJECTS) -lgcc
 	@test -f "$@"
+	@if find "$@" -size +2M -print -quit | grep -q .; then echo "Kernel ELF exceeds loader decompression buffer (2 MiB)"; exit 1; fi
+	@echo "KASLR RELOCS $@"
+	@readelf -SW "$@" | grep -q "\\.rel\\." || { echo "KASLR requires retained ELF relocation sections"; exit 1; }
+	@readelf -rW "$@" | grep -q "R_386_" || { echo "KASLR requires retained relocation entries"; exit 1; }
+	@if readelf -rW "$@" | grep -E "R_386_" | grep -Ev "R_386_(NONE|32|PC32|PLT32)" >/dev/null; then echo "Unsupported KASLR relocation found"; exit 1; fi
 
 # Compress the plain kernel for the Multiboot loader.
 $(PLAIN_KERNEL): $(PLAIN_KERNEL_ELF)

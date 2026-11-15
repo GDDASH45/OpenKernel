@@ -23,6 +23,7 @@
 #include <kernel/gdt.h>
 #include <kernel/module.h>
 #include <kernel/vdso.h>
+#include <kernel/kaslr.h>
 
 // Fix Undefined errors
 #ifndef NULL
@@ -88,6 +89,12 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr, uint32_t oem)
         panic("Physical memory initialization failed!");
     }
     printk("[BOOT] Physical memory initialized.\n");
+    if (kaslr_is_enabled()) {
+        printk("[KASLR] Kernel base 0x%08x, slide 0x%08x.\n",
+               kaslr_get_base(), kaslr_get_slide());
+    } else {
+        printk("[KASLR] Kernel loaded at its link address.\n");
+    }
     if (vmm_init() != 0) {
         panic("Virtual memory initialization failed!");
     }

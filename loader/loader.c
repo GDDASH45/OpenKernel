@@ -455,16 +455,512 @@ static int inflate_gzip(const uint8_t *input, uint32_t input_size,
     return 0;
 }
 
+
+#define ELF_MAX_SECTION_HEADERS 4096u
+#define ELF_SHF_ALLOC 0x2u
+#define ELF_SHT_SYMTAB 2u
+#define ELF_SHT_REL 9u
+#define ELF_SHN_UNDEF 0u
+#define ELF_R_386_NONE 0u
+#define ELF_R_386_32 1u
+#define ELF_R_386_PC32 2u
+#define ELF_R_386_PLT32 4u
+#define KASLR_MINIMUM 0x40000000u
+#define KASLR_MAXIMUM 0xC0000000u
+#define KASLR_GRANULARITY 0x00400000u
+#define PAGE_DIRECTORY_ENTRIES 1024u
+#define PAGE_SIZE_4M 0x00400000u
+#define PAGE_FLAGS_4M 0x083u
+
+struct elf32_section_header {
+    uint32_t name;
+    uint32_t type;
+    uint32_t flags;
+    uint32_t address;
+    uint32_t offset;
+    uint32_t size;
+    uint32_t link;
+    uint32_t info;
+    uint32_t alignment;
+    uint32_t entry_size;
+} __attribute__((packed));
+
+struct elf32_symbol {
+    uint32_t name;
+    uint32_t value;
+    uint32_t size;
+    uint8_t info;
+    uint8_t other;
+    uint16_t section_index;
+} __attribute__((packed));
+
+struct elf32_rel {
+    uint32_t offset;
+    uint32_t info;
+} __attribute__((packed));
+
+struct loader_mmap_entry {
+    uint32_t size;
+    uint64_t address;
+    uint64_t length;
+    uint32_t type;
+} __attribute__((packed));
+
+static uint32_t kaslr_random_state;
+static uint32_t kaslr_page_directory[PAGE_DIRECTORY_ENTRIES]
+    __attribute__((aligned(4096)));
+
+static uint32_t kaslr_random(void) {
+    uint32_t value = kaslr_random_state;
+    value ^= value << 13;
+    value ^= value >> 17;
+    value ^= value << 5;
+    kaslr_random_state = value;
+    return value;
+}
+
+static int range_overlaps(uint32_t first, uint32_t end,
+                          uint32_t other_first, uint32_t other_end) {
+    return first < other_end && other_first < end;
+}
+
+/* The kernel's virtual alias replaces identity mappings in this window. */
+static int kaslr_range_available(const struct multiboot_info *boot_info,
+                                 uint32_t first, uint32_t end) {
+    if (first < KASLR_MINIMUM || end <= first || end > KASLR_MAXIMUM)
+        return 0;
+
+    /* Only overlay addresses whose physical identity aliases are safe. */
+    if ((boot_info->flags & (1u << 6)) == 0 ||
+        boot_info->mmap_addr == 0 || boot_info->mmap_length < 24u ||
+        boot_info->mmap_addr > 0xFFFFFFFFu - boot_info->mmap_length)
+        return 0;
+    {
+        uint32_t offset = 0;
+        while (offset + sizeof(uint32_t) <= boot_info->mmap_length) {
+            const struct loader_mmap_entry *entry =
+                (const struct loader_mmap_entry *)(uintptr_t)
+                    (boot_info->mmap_addr + offset);
+            uint64_t region_end;
+            if (entry->size < 20u ||
+                entry->size > boot_info->mmap_length - offset -
+                              sizeof(uint32_t))
+                return 0;
+            region_end = entry->address + entry->length;
+            if (region_end < entry->address)
+                return 0;
+            if (entry->type != 1u &&
+                (uint64_t)first < region_end &&
+                entry->address < (uint64_t)end)
+                return 0;
+            offset += entry->size + sizeof(uint32_t);
+        }
+        if (offset != boot_info->mmap_length)
+            return 0;
+    }
+
+    if ((uint32_t)(uintptr_t)boot_info >
+        0xFFFFFFFFu - (uint32_t)sizeof(*boot_info))
+        return 0;
+    if (range_overlaps(first, end, (uint32_t)(uintptr_t)boot_info,
+                       (uint32_t)(uintptr_t)boot_info + sizeof(*boot_info)))
+        return 0;
+
+    if ((boot_info->flags & (1u << 6)) != 0 &&
+        boot_info->mmap_addr != 0 && boot_info->mmap_length != 0) {
+        if (boot_info->mmap_addr > 0xFFFFFFFFu - boot_info->mmap_length ||
+            range_overlaps(first, end, boot_info->mmap_addr,
+                           boot_info->mmap_addr + boot_info->mmap_length))
+            return 0;
+    }
+
+    if ((boot_info->flags & (1u << 3)) != 0 &&
+        boot_info->mods_count != 0 && boot_info->mods_addr != 0) {
+        const struct multiboot_module *modules =
+            (const struct multiboot_module *)(uintptr_t)boot_info->mods_addr;
+        uint32_t module_table_size;
+
+        if (boot_info->mods_count > 0xFFFFFFFFu / sizeof(*modules))
+            return 0;
+        module_table_size = boot_info->mods_count * sizeof(*modules);
+        if (boot_info->mods_addr > 0xFFFFFFFFu - module_table_size ||
+            range_overlaps(first, end, boot_info->mods_addr,
+                           boot_info->mods_addr + module_table_size))
+            return 0;
+        for (uint32_t index = 0; index < boot_info->mods_count; index++) {
+            if (modules[index].mod_end < modules[index].mod_start ||
+                range_overlaps(first, end, modules[index].mod_start,
+                               modules[index].mod_end))
+                return 0;
+        }
+    }
+
+    if ((boot_info->flags & (1u << 4)) != 0) {
+        uint32_t symbols_size = boot_info->syms[0] + boot_info->syms[1];
+        if (symbols_size < boot_info->syms[0] ||
+            boot_info->syms[2] > 0xFFFFFFFFu - symbols_size ||
+            range_overlaps(first, end, boot_info->syms[2],
+                           boot_info->syms[2] + symbols_size))
+            return 0;
+    } else if ((boot_info->flags & (1u << 5)) != 0) {
+        uint32_t symbols_size;
+        if (boot_info->syms[1] != 0 &&
+            boot_info->syms[0] > 0xFFFFFFFFu / boot_info->syms[1])
+            return 0;
+        symbols_size = boot_info->syms[0] * boot_info->syms[1];
+        if (boot_info->syms[2] > 0xFFFFFFFFu - symbols_size ||
+            range_overlaps(first, end, boot_info->syms[2],
+                           boot_info->syms[2] + symbols_size))
+            return 0;
+    }
+
+    if ((boot_info->flags & (1u << 2)) != 0 &&
+        boot_info->cmdline != 0) {
+        const char *command_line =
+            (const char *)(uintptr_t)boot_info->cmdline;
+        uint32_t length = 0;
+        while (length < 4096u && command_line[length] != '\0')
+            length++;
+        if (length == 4096u ||
+            boot_info->cmdline > 0xFFFFFFFFu - length - 1u ||
+            range_overlaps(first, end, boot_info->cmdline,
+                           boot_info->cmdline + length + 1u))
+            return 0;
+    }
+
+    if ((boot_info->flags & (1u << 7)) != 0 &&
+        boot_info->drives_addr != 0 && boot_info->drives_length != 0) {
+        if (boot_info->drives_addr >
+                0xFFFFFFFFu - boot_info->drives_length ||
+            range_overlaps(first, end, boot_info->drives_addr,
+                           boot_info->drives_addr + boot_info->drives_length))
+            return 0;
+    }
+
+    if ((boot_info->flags & (1u << 9)) != 0 &&
+        boot_info->boot_loader_name != 0) {
+        const char *name =
+            (const char *)(uintptr_t)boot_info->boot_loader_name;
+        uint32_t length = 0;
+        while (length < 256u && name[length] != '\0')
+            length++;
+        if (length == 256u ||
+            boot_info->boot_loader_name > 0xFFFFFFFFu - length - 1u ||
+            range_overlaps(first, end, boot_info->boot_loader_name,
+                           boot_info->boot_loader_name + length + 1u))
+            return 0;
+    }
+
+    if ((boot_info->flags & (1u << 8)) != 0 &&
+        boot_info->config_table != 0) {
+        if (boot_info->config_table > 0xFFFFFFFFu - 16u ||
+            range_overlaps(first, end, boot_info->config_table,
+                           boot_info->config_table + 16u))
+            return 0;
+    }
+
+    if ((boot_info->flags & (1u << 10)) != 0 &&
+        boot_info->apm_table != 0) {
+        if (boot_info->apm_table > 0xFFFFFFFFu - 20u ||
+            range_overlaps(first, end, boot_info->apm_table,
+                           boot_info->apm_table + 20u))
+            return 0;
+    }
+
+    if ((boot_info->flags & (1u << 11)) != 0) {
+        if (boot_info->vbe_control_info > 0xFFFFFFFFu - 512u ||
+            boot_info->vbe_mode_info > 0xFFFFFFFFu - 256u ||
+            range_overlaps(first, end, boot_info->vbe_control_info,
+                           boot_info->vbe_control_info + 512u) ||
+            range_overlaps(first, end, boot_info->vbe_mode_info,
+                           boot_info->vbe_mode_info + 256u))
+            return 0;
+    }
+
+    if ((boot_info->flags & (1u << 12)) != 0) {
+        uint64_t framebuffer_end = boot_info->framebuffer_addr +
+            (uint64_t)boot_info->framebuffer_pitch *
+            boot_info->framebuffer_height;
+        if (framebuffer_end < boot_info->framebuffer_addr)
+            return 0;
+        if ((uint64_t)first < framebuffer_end &&
+            boot_info->framebuffer_addr < (uint64_t)end)
+            return 0;
+        if (boot_info->framebuffer_type == 0 &&
+            boot_info->framebuffer_palette_num_colors != 0) {
+            uint32_t palette_size =
+                (uint32_t)boot_info->framebuffer_palette_num_colors * 3u;
+            if (boot_info->framebuffer_palette_addr >
+                    0xFFFFFFFFu - palette_size ||
+                range_overlaps(first, end,
+                               boot_info->framebuffer_palette_addr,
+                               boot_info->framebuffer_palette_addr +
+                                   palette_size))
+                return 0;
+        }
+    }
+    return 1;
+}
+
+static int kaslr_is_disabled(const struct multiboot_info *boot_info) {
+    const char *line;
+    uint32_t index = 0;
+
+    if ((boot_info->flags & (1u << 2)) == 0 || boot_info->cmdline == 0)
+        return 0;
+    line = (const char *)(uintptr_t)boot_info->cmdline;
+    while (index < 4096u && line[index] != '\0') {
+        uint32_t start;
+        uint32_t length;
+        while (index < 4096u &&
+               (line[index] == ' ' || line[index] == '\t'))
+            index++;
+        start = index;
+        while (index < 4096u && line[index] != '\0' &&
+               line[index] != ' ' && line[index] != '\t')
+            index++;
+        length = index - start;
+        if ((length == 7u &&
+             line[start] == 'n' && line[start + 1] == 'o' &&
+             line[start + 2] == 'k' && line[start + 3] == 'a' &&
+             line[start + 4] == 's' && line[start + 5] == 'l' &&
+             line[start + 6] == 'r') ||
+            (length == 9u &&
+             line[start] == 'k' && line[start + 1] == 'a' &&
+             line[start + 2] == 's' && line[start + 3] == 'l' &&
+             line[start + 4] == 'r' && line[start + 5] == '=' &&
+             line[start + 6] == 'o' && line[start + 7] == 'f' &&
+             line[start + 8] == 'f'))
+            return 1;
+    }
+    return 0;
+}
+
+static uint32_t choose_kernel_slide(const struct multiboot_info *boot_info,
+                                    uint32_t minimum, uint32_t maximum) {
+    uint32_t span = maximum - minimum;
+    uint32_t mapped_span =
+        (span + KASLR_GRANULARITY - 1u) & ~(KASLR_GRANULARITY - 1u);
+    uint32_t first_candidate;
+    uint32_t slots;
+    uint32_t seed;
+    uint32_t tsc_low;
+    uint32_t tsc_high;
+
+    if (kaslr_is_disabled(boot_info) || span == 0 ||
+        (minimum & (KASLR_GRANULARITY - 1u)) != 0 ||
+        mapped_span < span ||
+        mapped_span >= KASLR_MAXIMUM - KASLR_MINIMUM)
+        return 0;
+
+    __asm__ volatile ("rdtsc" : "=a"(tsc_low), "=d"(tsc_high));
+    seed = tsc_low ^ (tsc_high * 0x9E3779B9u) ^
+           (uint32_t)(uintptr_t)boot_info ^
+           boot_info->mmap_length ^ boot_info->mods_count ^
+           (uint32_t)(uintptr_t)&seed;
+    if (seed == 0)
+        seed = 0xA341316Cu;
+    kaslr_random_state = seed;
+
+    slots = (KASLR_MAXIMUM - KASLR_MINIMUM - mapped_span) /
+            KASLR_GRANULARITY;
+    if (slots == 0)
+        return 0;
+    first_candidate = kaslr_random() % slots;
+
+    for (uint32_t attempt = 0; attempt < slots; attempt++) {
+        uint32_t slot = (first_candidate + attempt) % slots;
+        uint32_t candidate = KASLR_MINIMUM +
+                             slot * KASLR_GRANULARITY;
+        uint32_t end = candidate + mapped_span;
+        if (kaslr_range_available(boot_info, candidate, end))
+            return candidate - minimum;
+    }
+    return 0;
+}
+
+static volatile uint32_t *relocation_target(
+    const struct elf32_program_header **headers, uint32_t load_count,
+    uint32_t address) {
+    for (uint32_t index = 0; index < load_count; index++) {
+        uint32_t start = headers[index]->physical_address;
+        uint32_t end = start + headers[index]->memory_size;
+        if (address >= start && address <= end &&
+            end - address >= sizeof(uint32_t))
+            return (volatile uint32_t *)(uintptr_t)address;
+    }
+    return 0;
+}
+
+static int enable_kaslr_paging(uint32_t physical_base,
+                               uint32_t image_size, uint32_t slide) {
+    uint32_t virtual_base = physical_base + slide;
+    uint32_t mapped_size =
+        (image_size + PAGE_SIZE_4M - 1u) & ~(PAGE_SIZE_4M - 1u);
+    uint32_t cr4;
+    uint32_t cr0;
+
+    if (slide == 0 || virtual_base < physical_base ||
+        (physical_base & (PAGE_SIZE_4M - 1u)) != 0 ||
+        (virtual_base & (PAGE_SIZE_4M - 1u)) != 0 ||
+        virtual_base >= KASLR_MAXIMUM ||
+        mapped_size < image_size ||
+        mapped_size > KASLR_MAXIMUM - virtual_base)
+        return -1;
+
+    for (uint32_t index = 0; index < PAGE_DIRECTORY_ENTRIES; index++)
+        kaslr_page_directory[index] = index * PAGE_SIZE_4M | PAGE_FLAGS_4M;
+
+    for (uint32_t offset = 0; offset < image_size;
+         offset += PAGE_SIZE_4M) {
+        uint32_t virtual_address = virtual_base + offset;
+        uint32_t physical_address = physical_base + offset;
+        uint32_t directory_index = virtual_address >> 22;
+
+        if (directory_index >= PAGE_DIRECTORY_ENTRIES ||
+            physical_address >= KERNEL_LOAD_LIMIT)
+            return -1;
+        kaslr_page_directory[directory_index] =
+            physical_address | PAGE_FLAGS_4M;
+    }
+
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    cr4 |= 0x10u;
+    __asm__ volatile ("mov %0, %%cr4" : : "r"(cr4) : "memory");
+    __asm__ volatile ("mov %0, %%cr3" : :
+                      "r"((uint32_t)(uintptr_t)kaslr_page_directory) :
+                      "memory");
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+    cr0 |= 0x80000000u;
+    __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0) : "memory");
+    return 0;
+}
+
+/*
+ * The kernel is linked at its physical load address. --emit-relocs preserves
+ * static ELF relocation records so references can be redirected to the
+ * randomized virtual alias while the image remains at its physical address.
+ */
+static int apply_kernel_relocations(
+    const uint8_t *image, uint32_t image_size,
+    const struct elf32_header *header,
+    const struct elf32_program_header **headers, uint32_t load_count,
+    uint32_t minimum, uint32_t maximum, uint32_t slide) {
+    const struct elf32_section_header *sections;
+    uint32_t section_bytes;
+
+    if (slide == 0)
+        return 0;
+    if (header->section_header_count == 0 ||
+        header->section_header_count > ELF_MAX_SECTION_HEADERS ||
+        header->section_header_size != sizeof(*sections) ||
+        header->section_header_offset > image_size)
+        return -1;
+    section_bytes = (uint32_t)header->section_header_count *
+                    (uint32_t)sizeof(*sections);
+    if (section_bytes > image_size - header->section_header_offset)
+        return -1;
+    sections = (const struct elf32_section_header *)(image +
+                                      header->section_header_offset);
+
+    for (uint32_t section_index = 0;
+         section_index < header->section_header_count; section_index++) {
+        const struct elf32_section_header *rel_section =
+            &sections[section_index];
+        const struct elf32_section_header *symbol_section;
+        const struct elf32_symbol *symbols;
+        uint32_t symbol_count;
+        uint32_t relocation_count;
+
+        if (rel_section->type != ELF_SHT_REL ||
+            rel_section->info >= header->section_header_count ||
+            (sections[rel_section->info].flags & ELF_SHF_ALLOC) == 0)
+            continue;
+        if (rel_section->link >= header->section_header_count ||
+            rel_section->entry_size != sizeof(struct elf32_rel) ||
+            rel_section->offset > image_size ||
+            rel_section->size > image_size - rel_section->offset)
+            return -1;
+
+        symbol_section = &sections[rel_section->link];
+        if (symbol_section->type != ELF_SHT_SYMTAB ||
+            symbol_section->entry_size != sizeof(struct elf32_symbol) ||
+            symbol_section->offset > image_size ||
+            symbol_section->size > image_size - symbol_section->offset)
+            return -1;
+        if (symbol_section->size % sizeof(struct elf32_symbol) != 0)
+            return -1;
+        symbol_count = symbol_section->size /
+                       sizeof(struct elf32_symbol);
+        symbols = (const struct elf32_symbol *)(image +
+                                                 symbol_section->offset);
+        relocation_count = rel_section->size / sizeof(struct elf32_rel);
+        if (rel_section->size % sizeof(struct elf32_rel) != 0)
+            return -1;
+
+        for (uint32_t relocation_index = 0;
+             relocation_index < relocation_count; relocation_index++) {
+            const struct elf32_rel *relocation =
+                (const struct elf32_rel *)(image + rel_section->offset +
+                    relocation_index * sizeof(struct elf32_rel));
+            uint32_t symbol_index = relocation->info >> 8;
+            uint32_t type = relocation->info & 0xFFu;
+            const struct elf32_symbol *symbol;
+            volatile uint32_t *target;
+            uint32_t original_place = relocation->offset;
+            uint32_t new_place = original_place + slide;
+            uint32_t original_symbol;
+            uint32_t new_symbol;
+            uint32_t old_value;
+            uint32_t addend;
+
+            if (type == ELF_R_386_NONE)
+                continue;
+            if (type != ELF_R_386_32 && type != ELF_R_386_PC32 &&
+                type != ELF_R_386_PLT32)
+                return -1;
+            if (symbol_index >= symbol_count ||
+                original_place < minimum ||
+                original_place > maximum - sizeof(uint32_t))
+                return -1;
+            target = relocation_target(headers, load_count, original_place);
+            if (target == 0)
+                return -1;
+            symbol = &symbols[symbol_index];
+            original_symbol = symbol->value;
+            new_symbol = original_symbol;
+            if (symbol->section_index != ELF_SHN_UNDEF &&
+                original_symbol >= minimum && original_symbol <= maximum) {
+                new_symbol += slide;
+                if (new_symbol < original_symbol)
+                    return -1;
+            }
+            old_value = *target;
+            if (type == ELF_R_386_32) {
+                addend = old_value - original_symbol;
+                *target = new_symbol + addend;
+            } else {
+                addend = old_value - original_symbol + original_place;
+                *target = new_symbol + addend - new_place;
+            }
+        }
+    }
+    return 0;
+}
+
 static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
                            uint32_t multiboot_address, uint32_t *entry) {
     const struct elf32_header *header;
     const struct elf32_program_header *headers[ELF_MAX_PROGRAM_HEADERS];
+    const struct multiboot_info *boot_info;
     uint32_t load_count = 0;
+    uint32_t minimum = 0xFFFFFFFFu;
+    uint32_t maximum = 0;
+    uint32_t slide;
     int entry_is_executable = 0;
 
-    if (image_size < sizeof(struct elf32_header)) {
+    if (image_size < sizeof(struct elf32_header))
         return -1;
-    }
     header = (const struct elf32_header *)image;
     if (header->ident[0] != 0x7Fu || header->ident[1] != 'E' ||
         header->ident[2] != 'L' || header->ident[3] != 'F' ||
@@ -478,9 +974,8 @@ static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
         header->program_header_offset > image_size ||
         header->program_header_count >
             (image_size - header->program_header_offset) /
-                header->program_header_size) {
+                header->program_header_size)
         return -1;
-    }
 
     for (uint32_t index = 0; index < header->program_header_count; index++) {
         const struct elf32_program_header *program =
@@ -488,11 +983,10 @@ static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
                 header->program_header_offset +
                 index * header->program_header_size);
         uint32_t address;
-        uint32_t end;
+        uint32_t segment_end;
 
-        if (program->type != PT_LOAD) {
+        if (program->type != PT_LOAD)
             continue;
-        }
         address = program->physical_address;
         if (program->memory_size < program->file_size ||
             program->offset > image_size ||
@@ -500,39 +994,41 @@ static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
             address != program->virtual_address ||
             address < KERNEL_LOAD_MINIMUM ||
             address >= KERNEL_LOAD_LIMIT ||
-            program->memory_size > KERNEL_LOAD_LIMIT - address) {
+            program->memory_size > KERNEL_LOAD_LIMIT - address ||
+            program->memory_size == 0)
             return -1;
-        }
-        end = address + program->memory_size;
+        segment_end = address + program->memory_size;
         for (uint32_t prior = 0; prior < load_count; prior++) {
             uint32_t prior_start = headers[prior]->physical_address;
             uint32_t prior_end = prior_start + headers[prior]->memory_size;
-            if (address < prior_end && prior_start < end) {
+            if (address < prior_end && prior_start < segment_end)
                 return -1;
-            }
         }
         headers[load_count++] = program;
-        if ((program->flags & PF_X) != 0 && header->entry >= address &&
-            header->entry < end) {
+        if (address < minimum)
+            minimum = address;
+        if (segment_end > maximum)
+            maximum = segment_end;
+        if ((program->flags & PF_X) != 0 &&
+            header->entry >= address && header->entry < segment_end)
             entry_is_executable = 1;
-        }
     }
-    if (load_count == 0 || !entry_is_executable) {
+    if (load_count == 0 || !entry_is_executable || maximum <= minimum ||
+        minimum != KERNEL_LOAD_MINIMUM)
         return -1;
-    }
 
-    const struct multiboot_info *boot_info =
-        (const struct multiboot_info *)(uintptr_t)multiboot_address;
+    boot_info = (const struct multiboot_info *)(uintptr_t)multiboot_address;
     if (multiboot_address >= KERNEL_LOAD_MINIMUM &&
         multiboot_address < KERNEL_LOAD_LIMIT &&
         sizeof(*boot_info) <= KERNEL_LOAD_LIMIT - multiboot_address) {
         uint32_t boot_info_end = multiboot_address + sizeof(*boot_info);
         for (uint32_t index = 0; index < load_count; index++) {
-            uint32_t start = headers[index]->physical_address;
-            uint32_t end = start + headers[index]->memory_size;
-            if (start < boot_info_end && multiboot_address < end) {
+            uint32_t segment_start = headers[index]->physical_address;
+            uint32_t segment_end = segment_start +
+                                   headers[index]->memory_size;
+            if (segment_start < boot_info_end &&
+                multiboot_address < segment_end)
                 return -1;
-            }
         }
     }
     if ((boot_info->flags & (1u << 3)) != 0 &&
@@ -540,33 +1036,46 @@ static int load_kernel_elf(const uint8_t *image, uint32_t image_size,
         const struct multiboot_module *modules =
             (const struct multiboot_module *)(uintptr_t)boot_info->mods_addr;
         for (uint32_t module = 0; module < boot_info->mods_count; module++) {
-            if (modules[module].mod_end < modules[module].mod_start) {
+            if (modules[module].mod_end < modules[module].mod_start)
                 return -1;
-            }
             for (uint32_t index = 0; index < load_count; index++) {
-                uint32_t start = headers[index]->physical_address;
-                uint32_t end = start + headers[index]->memory_size;
-                if (start < modules[module].mod_end &&
-                    modules[module].mod_start < end) {
+                uint32_t segment_start = headers[index]->physical_address;
+                uint32_t segment_end = segment_start +
+                                       headers[index]->memory_size;
+                if (segment_start < modules[module].mod_end &&
+                    modules[module].mod_start < segment_end)
                     return -1;
-                }
             }
         }
     }
 
+    slide = choose_kernel_slide(boot_info, minimum, maximum);
     for (uint32_t index = 0; index < load_count; index++) {
         const struct elf32_program_header *program = headers[index];
-        volatile uint8_t *destination =
-            (volatile uint8_t *)(uintptr_t)program->physical_address;
-        for (uint32_t byte = 0; byte < program->file_size; byte++) {
+        uint32_t destination_address = program->physical_address;
+        volatile uint8_t *destination;
+
+        if (destination_address >= KERNEL_LOAD_LIMIT ||
+            program->memory_size > KERNEL_LOAD_LIMIT - destination_address)
+            return -1;
+        destination = (volatile uint8_t *)(uintptr_t)destination_address;
+        for (uint32_t byte = 0; byte < program->file_size; byte++)
             destination[byte] = image[program->offset + byte];
-        }
         for (uint32_t byte = program->file_size;
-             byte < program->memory_size; byte++) {
+             byte < program->memory_size; byte++)
             destination[byte] = 0;
-        }
     }
-    *entry = header->entry;
+
+    if (apply_kernel_relocations(image, image_size, header, headers,
+                                 load_count, minimum, maximum, slide) != 0)
+        return -1;
+    if (header->entry + slide < header->entry ||
+        header->entry + slide >= KASLR_MAXIMUM)
+        return -1;
+    if (slide != 0 &&
+        enable_kaslr_paging(minimum, maximum - minimum, slide) != 0)
+        return -1;
+    *entry = header->entry + slide;
     return 0;
 }
 

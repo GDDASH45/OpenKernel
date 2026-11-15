@@ -236,8 +236,8 @@ int vmm_address_space_activate(struct address_space *space)
         return -1;
     }
 
-    address = (uint32_t)(uintptr_t)directory;
-    if (address != (uint32_t)(uintptr_t)active_directory) {
+    address = memory_kernel_virtual_to_physical(directory);
+    if (directory != active_directory) {
         __asm__ volatile ("mov %0, %%cr3" : : "r"(address) : "memory");
         active_directory = directory;
     }
