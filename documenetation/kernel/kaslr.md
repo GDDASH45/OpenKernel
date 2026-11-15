@@ -6,7 +6,7 @@ OpenKernel implements 32-bit virtual KASLR while retaining its existing Multiboo
 
 KASLR is enabled by default. The loader decompresses and validates the linked ELF image, keeps its loadable segments at their normal physical addresses beginning at 0x00400000, chooses a randomized virtual base, applies the ELF relocation records, installs a temporary page directory, and jumps to the relocated virtual entry point.
 
-The randomized kernel virtual window is 0x80000000 through 0xBFFFFFFF. The base is selected in 4 MiB increments, preserving compatibility with the kernel's current 4 MiB page mappings. The user virtual range still begins at 0xC0000000.
+The randomized kernel virtual window is 0x40000000 through 0xBFFFFFFF. The base is selected in 4 MiB increments, preserving compatibility with the kernel's current 4 MiB page mappings. The user virtual range still begins at 0xC0000000.
 
 The loader requires a valid Multiboot memory map before enabling KASLR. It keeps identity mappings for bootloader code, Multiboot structures, modules, and other physical addresses. The kernel's virtual alias replaces only the page-directory entries covering the kernel image. The candidate is rejected if that alias would hide Multiboot information, the memory map, module descriptors or payloads, the command line, drive information, bootloader name, VBE structures, or the framebuffer.
 
