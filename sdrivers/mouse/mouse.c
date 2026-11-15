@@ -164,6 +164,22 @@ static int32_t clamp_coordinate(int32_t value, int32_t maximum)
     return value;
 }
 
+static int32_t clamp_motion(int32_t position, int32_t delta,
+                            int32_t maximum)
+{
+    if (delta > 0 && position > maximum - delta) return maximum;
+    if (delta < 0 && position < -delta) return 0;
+    return position + delta;
+}
+
+static int32_t saturating_add(int32_t left, int32_t right)
+{
+    if (right > 0 && left > 0x7FFFFFFF - right) return 0x7FFFFFFF;
+    if (right < 0 && left < (-0x7FFFFFFF - 1) - right)
+        return (-0x7FFFFFFF - 1);
+    return left + right;
+}
+
 static int32_t signed_wheel_delta(uint8_t value)
 {
     value &= 0x0F;
@@ -191,14 +207,14 @@ static void publish_packet(void)
     pressed = (uint8_t)(buttons & (uint8_t)~current_state.buttons);
     released = (uint8_t)(current_state.buttons & (uint8_t)~buttons);
 
-    current_state.x = clamp_coordinate(current_state.x + dx, max_x);
-    current_state.y = clamp_coordinate(current_state.y + dy, max_y);
+    current_state.x = clamp_motion(current_state.x, dx, max_x);
+    current_state.y = clamp_motion(current_state.y, dy, max_y);
     current_state.buttons = buttons;
     current_state.pressed |= pressed;
     current_state.released |= released;
-    current_state.delta_x += dx;
-    current_state.delta_y += dy;
-    current_state.wheel += wheel;
+    current_state.delta_x = saturating_add(current_state.delta_x, dx);
+    current_state.delta_y = saturating_add(current_state.delta_y, dy);
+    current_state.wheel = saturating_add(current_state.wheel, wheel);
     current_state.packets++;
     mouse_generation++;
 }
