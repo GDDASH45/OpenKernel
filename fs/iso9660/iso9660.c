@@ -266,18 +266,13 @@ static int iso_name_length(const uint8_t *record)
         if (length & 1)
             return -1;
 
-        if (length >= 4 && record[33 + length - 4] == 0x00 &&
-            record[33 + length - 3] == ';' &&
-            record[33 + length - 2] == 0x00 &&
-            record[33 + length - 1] >= '0' &&
-            record[33 + length - 1] <= '9') {
-            i = length - 4;
-            while (i >= 2 && record[33 + i - 2] == 0x00 &&
-                   record[33 + i - 1] >= '0' &&
-                   record[33 + i - 1] <= '9')
-                i -= 2;
+        i = length - 2;
+        while (i >= 0 && record[33 + i] == 0x00 &&
+               record[34 + i] >= '0' && record[34 + i] <= '9')
+            i -= 2;
+        if (i >= 0 && record[33 + i] == 0x00 &&
+            record[34 + i] == ';')
             length = i;
-        }
 
         if (length >= 2 && record[33 + length - 2] == 0x00 &&
             record[33 + length - 1] == '.')
