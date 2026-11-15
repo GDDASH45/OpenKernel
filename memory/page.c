@@ -82,6 +82,13 @@ static uint32_t kernel_image_size(void) {
     return end > start ? (uint32_t)(end - start) : 0;
 }
 
+static uint32_t kernel_alias_reservation_size(void) {
+    uint32_t size = kernel_image_size();
+    uint32_t rounded = (size + PAGE_SIZE_4M - 1u) &
+                       ~(PAGE_SIZE_4M - 1u);
+    return rounded >= size ? rounded : 0;
+}
+
 uint32_t memory_kernel_virtual_to_physical(const void *address) {
     uintptr_t value = (uintptr_t)address;
     uintptr_t start = (uintptr_t)&__kernel_start;
@@ -199,7 +206,8 @@ int memory_init(const struct multiboot_info *boot_info) {
     reserve_range(0, 0x100000u);
     reserve_range(KERNEL_PHYSICAL_BASE, kernel_image_size());
     /* The virtual alias replaces these identity-mapped physical pages. */
-    reserve_range((uintptr_t)&__kernel_start, kernel_image_size());
+    reserve_range((uintptr_t)&__kernel_start,
+                  kernel_alias_reservation_size());
     reserve_range((uintptr_t)boot_info, sizeof(*boot_info));
     if ((boot_info->flags & MULTIBOOT_INFO_MEMORY_MAP) != 0) {
         reserve_range(boot_info->mmap_addr, boot_info->mmap_length);
