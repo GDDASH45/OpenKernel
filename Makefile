@@ -301,6 +301,7 @@ $(PLAIN_KERNEL_ELF): $(OPENKERNEL_A) linker_plain.ld
 	@echo "LD $@"
 	@$(CC) $(PLAIN_LDFLAGS) -o "$@" $(PLAIN_OBJECTS) -lgcc
 	@test -f "$@"
+	@test "$(stat -c %s "$@")" -le 2097152 || { echo "Kernel ELF exceeds loader decompression buffer (2 MiB)"; exit 1; }
 	@echo "KASLR RELOCS $@"
 	@readelf -SW "$@" | grep -q "\\.rel\\." || { echo "KASLR requires retained ELF relocation sections"; exit 1; }
 	@readelf -rW "$@" | awk '$3 ~ /^R_386_/ && $3 != "R_386_NONE" && $3 != "R_386_32" && $3 != "R_386_PC32" && $3 != "R_386_PLT32" { print "Unsupported KASLR relocation: " $3 > "/dev/stderr"; bad = 1 } END { exit bad }'
