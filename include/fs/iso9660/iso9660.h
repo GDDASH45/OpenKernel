@@ -7,7 +7,7 @@
  * Read-only ISO9660 support over a IDE-channel ATAPI CD-ROM device.
  *
  * iso9660_mount() probes master and slave devices on both IDE channels for an ATAPI device.
- * Paths are absolute and use ISO9660 primary-volume 8-bit identifiers.
+ * Paths are absolute and use UTF-8 names. Joliet supplementary volumes are preferred when present.
  */
 int iso9660_mount(void);
 int iso9660_is_mounted(void);

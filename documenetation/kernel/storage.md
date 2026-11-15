@@ -111,7 +111,11 @@ The public API is `<fs/iso9660/iso9660.h>`:
   entry names; directory names have a trailing slash.
 - `iso9660_is_mounted()` reports whether mounting succeeded.
 
-This is an initial read-only implementation. It supports primary volume
-descriptors and ordinary ISO directory records. Joliet names, Rock Ridge
-extensions, multi-extent files, writes, VFS integration, and file-descriptor
-syscalls are not implemented.  ISO9660 support is independent of FAT16 and does not modify OKFS2.
+This is a read-only implementation. It supports primary volume descriptors,
+Joliet supplementary volume descriptors (levels 1–3), ordinary ISO directory
+records, UTF-8 path names, directory traversal, and file reads. When a recognized
+Joliet supplementary volume is present, it is preferred over the primary
+volume so that Unicode names are visible. Joliet UCS-2BE identifiers are
+converted to UTF-8 for the public API. Rock Ridge extensions, multi-extent
+files, writes, VFS integration, and file-descriptor syscalls are not
+implemented. ISO9660 support is independent of FAT16 and does not modify OKFS2.
