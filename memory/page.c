@@ -191,17 +191,26 @@ void *memory_alloc_page(void) {
 }
 
 void *memory_alloc_pages(uint32_t count) {
-    if (count == 0 || count > free_pages) {
+    return memory_alloc_pages_aligned(count, 1);
+}
+
+void *memory_alloc_pages_aligned(uint32_t count, uint32_t alignment_pages) {
+    if (count == 0 || count > free_pages || alignment_pages == 0 ||
+        alignment_pages > PAGE_COUNT ||
+        (alignment_pages & (alignment_pages - 1u)) != 0) {
         return 0;
     }
 
     for (uint32_t pass = 0; pass < 2; pass++) {
         uint32_t first = pass == 0 ? next_page : 0;
         uint32_t limit = pass == 0 ? (uint32_t)PAGE_COUNT : next_page;
-        for (uint32_t page = first; page < limit;) {
+        uint32_t page = (first + alignment_pages - 1u) &
+                        ~(alignment_pages - 1u);
+
+        while (page < limit && count <= limit - page) {
             uint32_t run = 0;
-            while (run < count && page + run < limit &&
-                   !page_is_used(page + run)) {
+
+            while (run < count && !page_is_used(page + run)) {
                 run++;
             }
             if (run == count) {
@@ -214,7 +223,9 @@ void *memory_alloc_pages(uint32_t count) {
                 }
                 return (void *)(uintptr_t)(page * MEMORY_PAGE_SIZE);
             }
-            page += run + 1;
+
+            page = (page + run + 1u + alignment_pages - 1u) &
+                   ~(alignment_pages - 1u);
         }
     }
     return 0;
@@ -254,4 +265,8 @@ uint32_t memory_total_pages(void) {
 
 uint32_t memory_free_pages(void) {
     return free_pages;
+}
+
+uint32_t memory_used_pages(void) {
+    return total_pages - free_pages;
 }

@@ -18,6 +18,7 @@
 #include <kvideo/fbcon.h>
 #include "../fs/vfs.h"
 #include <memory/page.h>
+#include <kernel/gdt.h>
 #include <kernel/module.h>
 #include <kernel/vdso.h>
 
@@ -83,6 +84,7 @@ void kernel_main(uint32_t magic, uint32_t multiboot_addr, uint32_t oem)
     if (memory_init(mbi) != 0) {
         panic("Physical memory initialization failed!");
     }
+    gdt_init();
     if (!acpi_init()) {
         k_print("[ACPI] Reset register unavailable; reboot will use the keyboard controller.\n");
     }

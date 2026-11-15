@@ -4,6 +4,7 @@
 #include <kernel.h>
 #include <memory/page.h>
 #include <kernel/vdso.h>
+#include <kernel/gdt.h>
 
 static uint32_t current_pid;
 static uint32_t next_pid;
@@ -137,6 +138,8 @@ void process_system_init(void)
     process_table[0].state = PROCESS_STATE_RUNNING;
 
     process_set_boot_stack(&process_table[0]);
+    gdt_set_kernel_stack(process_table[0].kernel_stack +
+                         process_table[0].kernel_stack_size);
 }
 
 uint32_t process_current_pid(void)
@@ -178,6 +181,10 @@ uint32_t process_enter_program(void)
     process->next = 0;
 
     current_process = process;
+    if (process->kernel_stack != 0) {
+        gdt_set_kernel_stack(process->kernel_stack +
+                             process->kernel_stack_size);
+    }
 
     return previous_pid;
 }
@@ -208,6 +215,10 @@ void process_leave_program(uint32_t previous_pid)
     }
 
     current_process->state = PROCESS_STATE_RUNNING;
+    if (current_process->kernel_stack != 0) {
+        gdt_set_kernel_stack(current_process->kernel_stack +
+                             current_process->kernel_stack_size);
+    }
 }
 
 int32_t process_execute(int32_t (*entry)(void), int returns_status)
@@ -395,6 +406,10 @@ uint32_t *process_interrupt_return(
     vdso_set_current_pid(current_pid);
 
     next->state = PROCESS_STATE_RUNNING;
+    if (next->kernel_stack != 0) {
+        gdt_set_kernel_stack(next->kernel_stack +
+                             next->kernel_stack_size);
+    }
 
     return next->interrupt_frame;
 }
