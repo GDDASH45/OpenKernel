@@ -93,3 +93,25 @@ writes, formatting, automatic partition-table scanning, VFS integration, and
 file-descriptor syscalls are not implemented. Mounting FAT16 does not replace
 or reformat the existing OKFS2 store.
 
+
+## Read-only ISO9660
+
+The ISO9660 driver in `fs/iso9660/iso9660.c` uses primary-channel ATAPI
+PACKET commands to read 2048-byte CD-ROM logical blocks. It probes master and slave devices on both
+primary and secondary IDE channels, then locates a primary volume descriptor
+starting at logical block 16.
+
+The public API is `<fs/iso9660/iso9660.h>`:
+
+- `iso9660_mount()` probes for an ATAPI device and mounts its ISO9660 primary
+  volume.
+- `iso9660_read_file(path, buffer, capacity)` reads a file into a
+  caller-provided buffer and returns the number of bytes read.
+- `iso9660_list_directory(path, buffer, capacity)` writes newline-separated
+  entry names; directory names have a trailing slash.
+- `iso9660_is_mounted()` reports whether mounting succeeded.
+
+This is an initial read-only implementation. It supports primary volume
+descriptors and ordinary ISO directory records. Joliet names, Rock Ridge
+extensions, multi-extent files, writes, VFS integration, and file-descriptor
+syscalls are not implemented.  ISO9660 support is independent of FAT16 and does not modify OKFS2.
