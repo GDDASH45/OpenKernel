@@ -1,5 +1,6 @@
 #include <kernel/module.h>
 #include <kernel.h>
+#include <write/write.h>
 #include <kernel/tar.h>
 #include <kernel/time.h>
 #include <memory/page.h>
