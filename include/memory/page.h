@@ -16,5 +16,6 @@ uint32_t memory_total_pages(void);
 uint32_t memory_free_pages(void);
 uint32_t memory_used_pages(void);
 uint32_t *memory_kernel_page_directory(void);
+uint32_t memory_kernel_virtual_to_physical(const void *address);
 
 #endif
