@@ -1,0 +1,6 @@
+# FAT16 configuration
+CONFIG=CONFIG_FAT16_FS
+
+DEFAULT=n
+
+SOURCE=fat.c

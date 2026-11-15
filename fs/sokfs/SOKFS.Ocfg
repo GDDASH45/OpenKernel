@@ -1,0 +1,7 @@
+# SOKFS config entry
+CONFIG=CONFIG_SOKFS
+
+DEFAULT=n
+
+SOURCE=sokfs.c
+SOURCE=fileops.c
