@@ -16,7 +16,7 @@ If no safe virtual range is available, the loader falls back to the original 0x0
 
 ## ELF relocation requirements
 
-The kernel is linked at 0x00400000. The plain-kernel link uses --emit-relocs to retain static relocation records in the ELF file. The loader applies R_386_32 and R_386_PC32 relocations for allocated sections. R_386_NONE entries are ignored. The build checks the final ELF and fails if it contains another i386 relocation type that the loader cannot process.
+The kernel is linked at 0x00400000. The plain-kernel link uses --emit-relocs to retain static relocation records in the ELF file. The loader applies R_386_32, R_386_PC32, and R_386_PLT32 relocations for allocated sections. R_386_NONE entries are ignored. The build checks the final ELF and fails if it contains another i386 relocation type that the loader cannot process.
 
 Relocation targets are patched at their fixed physical addresses, while symbol values and PC-relative places are adjusted to the randomized virtual layout. Linker-defined absolute symbols inside the kernel image are relocated as well. Symbols outside the image and undefined symbols are left unchanged.
 
