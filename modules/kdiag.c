@@ -1252,6 +1252,10 @@ static uint32_t kdiag_clamp_u32(uint32_t value,
 
 static uint32_t kdiag_gcd(uint32_t left, uint32_t right)
 {
+    if (left == 0)
+        return right;
+    if (right == 0)
+        return left;
     while (left != right) {
         if (left > right)
             left -= right;
