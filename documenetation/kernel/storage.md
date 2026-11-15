@@ -70,3 +70,26 @@ file and path operations in `fs/okfs/fileops.c`, and initramfs extraction in
 The legacy OKFS1 filesystem was removed in OpenKernel 0.2.0-rc3 and is not
 part of the current boot or storage documentation. Current references and
 startup behavior target the OKFS2 persistent store described above.
+
+## Read-only FAT16
+
+The FAT driver in `fs/fat/fat.c` reads FAT16 volumes through the existing
+primary-master ATA PIO sector interface. Its public API is
+`<fs/fat/fat.h>`:
+
+- `fat_mount(partition_lba)` mounts a FAT16 volume at the supplied starting
+  LBA. Use zero for a superfloppy image or the partition's first LBA for an
+  MBR-partitioned disk. Partition discovery is not automatic.
+- `fat_read_file(path, buffer, capacity)` reads a file into a caller-owned
+  buffer. It returns the byte count, `-22` if the buffer is too small, or
+  `-1` on invalid paths, unsupported volumes, and I/O errors.
+- `fat_list_directory(path, buffer, capacity)` writes newline-separated
+  8.3 names into the caller's buffer. Directories have a trailing slash.
+- `fat_is_mounted()` reports whether a successful mount is active.
+
+This initial driver is deliberately read-only and supports FAT16 volumes with
+512-byte sectors and standard 8.3 short names. Long filenames, FAT12, FAT32,
+writes, formatting, automatic partition-table scanning, VFS integration, and
+file-descriptor syscalls are not implemented. Mounting FAT16 does not replace
+or reformat the existing OKFS2 store.
+
