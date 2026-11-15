@@ -780,7 +780,6 @@ static int apply_kernel_relocations(
             original_symbol = symbol->value;
             new_symbol = original_symbol;
             if (symbol->section_index != ELF_SHN_UNDEF &&
-                symbol->section_index != ELF_SHN_ABS &&
                 original_symbol >= minimum && original_symbol <= maximum) {
                 new_symbol += slide;
                 if (new_symbol < original_symbol)
