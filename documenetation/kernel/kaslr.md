@@ -8,11 +8,11 @@ KASLR is enabled by default. The loader decompresses and validates the linked EL
 
 The randomized kernel virtual window is 0x80000000 through 0xBFFFFFFF. The base is selected in 4 MiB increments, preserving compatibility with the kernel's current 4 MiB page mappings. The user virtual range still begins at 0xC0000000.
 
-The loader keeps identity mappings for bootloader code, Multiboot structures, modules, and other physical addresses. The kernel's virtual alias replaces only the page-directory entries covering the kernel image. The candidate is rejected if that alias would hide Multiboot information, the memory map, module descriptors or payloads, the command line, drive information, bootloader name, VBE structures, or the framebuffer.
+The loader requires a valid Multiboot memory map before enabling KASLR. It keeps identity mappings for bootloader code, Multiboot structures, modules, and other physical addresses. The kernel's virtual alias replaces only the page-directory entries covering the kernel image. The candidate is rejected if that alias would hide Multiboot information, the memory map, module descriptors or payloads, the command line, drive information, bootloader name, VBE structures, or the framebuffer.
 
 The loader seeds a small xorshift generator using the CPU timestamp counter and boot-time values. This provides boot-to-boot variation, but it is not a cryptographically secure random-number generator. Systems requiring strong entropy should add a hardware or firmware entropy source.
 
-If no safe virtual range is available, the loader falls back to the original 0x00400000 link address. The Multiboot magic value, register handoff, and boot information structure remain unchanged.
+If no valid memory map or safe virtual range is available, the loader falls back to the original 0x00400000 link address. The Multiboot magic value, register handoff, and boot information structure remain unchanged.
 
 ## ELF relocation requirements
 
