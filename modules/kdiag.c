@@ -13,7 +13,6 @@
 
 #define KDIAG_RING_CAPACITY 16u
 #define KDIAG_BITMAP_BITS 256u
-#define KDIAG_MAX_TESTS 4096u
 
 static uint32_t kdiag_checks;
 static uint32_t kdiag_failures;
@@ -1062,11 +1061,6 @@ static void kdiag_expect(uint32_t actual, uint32_t expected)
         ++kdiag_failures;
 }
 
-static void kdiag_expect_true(int condition)
-{
-    kdiag_expect(condition != 0, 1);
-}
-
 static uint8_t kdiag_reverse8(uint8_t value)
 {
     uint8_t result = 0;
@@ -1181,8 +1175,16 @@ static int kdiag_parse_u32(const char *text, uint32_t *value)
             digit = (uint32_t)(*text - 'A') + 10u;
         else
             return -1;
-        if (digit >= base || result > (0xFFFFFFFFu - digit) / base)
+        if (digit >= base)
             return -1;
+        if (base == 10u) {
+            if (result > 429496729u ||
+                (result == 429496729u && digit > 5u))
+                return -1;
+        } else {
+            if (result > 0x0FFFFFFFu)
+                return -1;
+        }
         result = result * base + digit;
         ++digits;
         ++text;
@@ -1250,10 +1252,11 @@ static uint32_t kdiag_clamp_u32(uint32_t value,
 
 static uint32_t kdiag_gcd(uint32_t left, uint32_t right)
 {
-    while (right != 0) {
-        uint32_t remainder = left % right;
-        left = right;
-        right = remainder;
+    while (left != right) {
+        if (left > right)
+            left -= right;
+        else
+            right -= left;
     }
     return left;
 }
