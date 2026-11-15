@@ -169,6 +169,7 @@ int sokfs_format(uint32_t start_lba, uint32_t sector_count)
     struct sokfs_inode root;
     uint8_t zero[SOKFS_SECTOR_SIZE];
     uint32_t bitmap_sectors;
+    uint32_t root_sector;
 
     mounted = 0;
     if (sector_count < 512U || sector_count > SOKFS_MAX_SECTORS ||
@@ -216,8 +217,12 @@ int sokfs_format(uint32_t start_lba, uint32_t sector_count)
     root.marker = SOKFS_INODE_MARKER;
     root.type = SOKFS_TYPE_DIRECTORY;
     root.mode = 0755U;
-    if (allocate_run(1, &root.start_sector) != 0 ||
-        ata_write_sector(volume_start + root.start_sector, zero) != 0) {
+    if (allocate_run(1, &root_sector) != 0) {
+        mounted = 0;
+        return -1;
+    }
+    root.start_sector = root_sector;
+    if (ata_write_sector(volume_start + root.start_sector, zero) != 0) {
         mounted = 0;
         return -1;
     }
