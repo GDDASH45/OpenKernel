@@ -4,7 +4,6 @@
 
 #define FAT_SECTOR_SIZE 512u
 #define FAT_ENTRY_SIZE 32u
-#define FAT_MAX_CLUSTERS 131072u
 #define FAT_MAX_PATH 256u
 #define FAT_ATTR_DIRECTORY 0x10u
 #define FAT_ATTR_VOLUME 0x08u
@@ -297,7 +296,7 @@ int fat_mount(uint32_t partition_lba)
     data_sectors = total - volume.reserved_sectors -
                    (uint32_t)volume.fat_count * fat_size - root_sectors;
     clusters = data_sectors / volume.sectors_per_cluster;
-    if (clusters < 1 || clusters >= FAT_MAX_CLUSTERS ||
+    if (clusters < 1 || clusters >= 0x0FFFFFF5u ||
         partition_lba > 0xFFFFFFFFu - total)
         return -1;
 
@@ -343,6 +342,7 @@ int fat_read_file(const char *path, void *buffer, uint32_t capacity)
     if (!volume.mounted || !buffer || resolve(path, &e, &root) ||
         root || (e.attributes & FAT_ATTR_DIRECTORY))
         return -1;
+    if (e.size > 0x7FFFFFFFu) return -1;
     if (e.size > capacity) return -22;
     if (!e.size) return 0;
     cluster = entry_cluster(&e);
@@ -376,7 +376,8 @@ int fat_write_file(const char *path, const void *buffer, uint32_t size)
     int root;
     if (!volume.mounted || (!buffer && size) ||
         resolve(path, &e, &root) || root ||
-        (e.attributes & FAT_ATTR_DIRECTORY) || size != e.size)
+        (e.attributes & FAT_ATTR_DIRECTORY) || size != e.size ||
+        size > 0x7FFFFFFFu)
         return -1;
     if (!size) return 0;
     cluster = entry_cluster(&e);
