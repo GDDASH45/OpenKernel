@@ -70,6 +70,11 @@ static void reap_zombie_stacks(void)
             uint32_t pages =
                 process->kernel_stack_size / MEMORY_PAGE_SIZE;
 
+            if (process->address_space != 0) {
+                address_space_destroy(process->address_space);
+                process->address_space = 0;
+            }
+
             if (memory_free_pages_at(
                     (void *)(uintptr_t)process->kernel_stack,
                     pages) == 0) {
@@ -82,6 +87,7 @@ static void reap_zombie_stacks(void)
                 process->uid = UID_ROOT;
                 process->interrupt_frame = 0;
                 process->fork_child = 0;
+                process->address_space = 0;
                 process->exit_status = 0;
                 process->next = 0;
             }
@@ -269,6 +275,7 @@ int32_t process_fork_current(void)
 {
     struct process *parent = current_process;
     struct process *child;
+    struct address_space *child_address_space;
 
     uint32_t source_base;
     uint32_t stack_size;
@@ -279,7 +286,8 @@ int32_t process_fork_current(void)
     if (parent == 0 ||
         parent->interrupt_frame == 0 ||
         parent->kernel_stack == 0 ||
-        parent->kernel_stack_size == 0) {
+        parent->kernel_stack_size == 0 ||
+        parent->address_space == 0) {
         return -OK_ENOSYS;
     }
 
@@ -295,9 +303,14 @@ int32_t process_fork_current(void)
         return -OK_ENOSYS;
     }
 
-    destination = (uint8_t *)memory_alloc_pages(STACK_PAGE_COUNT);
+    child_address_space = address_space_clone(parent->address_space);
+    if (child_address_space == 0) {
+        return -OK_ENOMEM;
+    }
 
+    destination = (uint8_t *)memory_alloc_pages(STACK_PAGE_COUNT);
     if (destination == 0) {
+        address_space_destroy(child_address_space);
         return -OK_ENOMEM;
     }
 
@@ -311,6 +324,7 @@ int32_t process_fork_current(void)
         stack_size - sizeof(struct kernel_panic_registers)) {
 
         memory_free_pages_at(destination, STACK_PAGE_COUNT);
+        address_space_destroy(child_address_space);
         return -OK_EFAULT;
     }
 
@@ -350,7 +364,7 @@ int32_t process_fork_current(void)
         (uint32_t *)(destination + frame_offset);
 
     child->fork_child = 1;
-    child->address_space = 0;
+    child->address_space = child_address_space;
     child->next = 0;
 
     struct kernel_panic_registers *parent_frame =
