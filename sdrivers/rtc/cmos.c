@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <kernel/ports.h>
+#include <kernel/rtc.h>
 
 #define CMOS_ADDRESS 0x70
 #define CMOS_DATA    0x71
@@ -16,15 +17,6 @@
 #define CMOS_UIP 0x80
 #define CMOS_BINARY_MODE 0x04
 #define CMOS_24_HOUR_MODE 0x02
-
-struct rtc_time {
-    uint8_t second;
-    uint8_t minute;
-    uint8_t hour;
-    uint8_t day;
-    uint8_t month;
-    uint8_t year;
-};
 
 static uint8_t cmos_read(uint8_t reg)
 {
@@ -125,6 +117,7 @@ int rtc_get_time(struct rtc_time *time)
     );
 
     *time = second;
+    time->year = (uint16_t)(2000u + second.year);
 
     return 0;
 }
