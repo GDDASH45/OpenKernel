@@ -8,6 +8,7 @@
 #include <memory/page.h>
 #include <kernel/pit.h>
 #include <kernel/ata.h>
+#include <fs/iso9660/iso9660.h>
 
 #define MAX_VFS_NODES 256
 #define MAX_VFS_MOUNTS 16
@@ -569,6 +570,18 @@ static int vfs_scan_partitions(void)
     return (int)found;
 }
 
+int vfs_read_optical_block_device(const char *path, uint32_t block,
+                                     void *buffer)
+{
+    struct vfs_node *node = vfs_lookup(vfs_get_root(), path);
+
+    if (node == 0 || buffer == 0 ||
+        !(node->flags & VFS_OPTICAL_DEVICE))
+        return -1;
+
+    return iso9660_read_device_block(block, buffer);
+}
+
 int vfs_read_block_device(const char *path, uint32_t sector, void *buffer)
 {
     struct vfs_node *node = vfs_lookup(vfs_get_root(), path);
@@ -827,6 +840,18 @@ void mount_essential_folders(void) {
         if (vfs_create_device(path, VFS_DEVICE_CONSOLE) != 0) {
             k_print("[VFS] Failed to create a tty device.\n");
             return;
+        }
+    }
+    if (iso9660_detect_device() == 0) {
+        struct vfs_node *dev = vfs_lookup(vfs_get_root(), "/dev");
+        if (dev != 0 && (dev->flags & VFS_DIRECTORY)) {
+            struct vfs_node *sr0 = vfs_create_node(
+                "sr0", VFS_FILE | VFS_DEVICE | VFS_OPTICAL_DEVICE, dev);
+            if (sr0 != 0) {
+                k_print("[VFS] ATAPI CD-ROM available as /dev/sr0.\\n");
+            } else {
+                k_print("[VFS] Could not create /dev/sr0.\\n");
+            }
         }
     }
     int partitions = vfs_scan_partitions();
