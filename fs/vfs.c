@@ -7,6 +7,7 @@
 #include <fs/sys/sysfs.h>
 #include <memory/page.h>
 #include <kernel/pit.h>
+#include <kernel/ata.h>
 
 #define MAX_VFS_NODES 256
 #define MAX_VFS_MOUNTS 16
@@ -18,6 +19,21 @@ static struct vfs_node root_node = { "/", VFS_DIRECTORY, 0, 0, 0, 0, 0, 0, 0 };
 static struct vfs_node dev_root;
 static struct vfs_node *active_console;
 static uint32_t random_state = 0x4F70656Bu;
+
+#define VFS_MAX_BLOCK_DEVICES 4u
+#define VFS_MBR_PARTITION_OFFSET 446u
+#define VFS_MBR_SIGNATURE_OFFSET 510u
+#define VFS_MBR_SIGNATURE 0xAA55u
+#define ATA_LBA28_SECTORS 0x10000000u
+
+struct vfs_block_device {
+    uint32_t start_lba;
+    uint32_t sector_count;
+    uint8_t partition_type;
+};
+
+static struct vfs_block_device block_devices[VFS_MAX_BLOCK_DEVICES];
+static uint32_t block_device_count;
 
 static int console_device_write(struct vfs_node *node, const char *buffer,
                                 uint32_t size) {
@@ -496,6 +512,94 @@ int vfs_console_write(const char *buffer, uint32_t size) {
     return active_console->write(active_console, buffer, size);
 }
 
+static int vfs_scan_partitions(void)
+{
+    uint8_t sector[512];
+    uint32_t found = 0;
+
+    if (ata_read_sector(0, sector) != 0)
+        return -1;
+
+    if ((uint16_t)(sector[VFS_MBR_SIGNATURE_OFFSET] |
+                   ((uint16_t)sector[VFS_MBR_SIGNATURE_OFFSET + 1] << 8)) !=
+        VFS_MBR_SIGNATURE)
+        return 0;
+
+    for (uint32_t index = 0; index < VFS_MAX_BLOCK_DEVICES; ++index) {
+        const uint8_t *entry = &sector[VFS_MBR_PARTITION_OFFSET + index * 16u];
+        uint8_t type = entry[4];
+        uint32_t start = (uint32_t)entry[8] |
+                         ((uint32_t)entry[9] << 8) |
+                         ((uint32_t)entry[10] << 16) |
+                         ((uint32_t)entry[11] << 24);
+        uint32_t count = (uint32_t)entry[12] |
+                         ((uint32_t)entry[13] << 8) |
+                         ((uint32_t)entry[14] << 16) |
+                         ((uint32_t)entry[15] << 24);
+        char name[] = "mda1";
+        struct vfs_node *node;
+        struct vfs_node *dev;
+
+        if (type == 0 || count == 0 || start >= ATA_LBA28_SECTORS ||
+            count > ATA_LBA28_SECTORS - start)
+            continue;
+
+        if (block_device_count >= VFS_MAX_BLOCK_DEVICES)
+            break;
+
+        name[3] = (char)('1' + index);
+        dev = vfs_lookup(vfs_get_root(), "/dev");
+        if (dev == 0 || !(dev->flags & VFS_DIRECTORY))
+            return -1;
+
+        node = vfs_create_node(name, VFS_FILE | VFS_DEVICE |
+                               VFS_BLOCK_DEVICE, dev);
+        if (node == 0)
+            return -1;
+
+        block_devices[block_device_count].start_lba = start;
+        block_devices[block_device_count].sector_count = count;
+        block_devices[block_device_count].partition_type = type;
+        node->data = &block_devices[block_device_count];
+        node->size = count;
+        block_device_count++;
+        found++;
+    }
+
+    return (int)found;
+}
+
+int vfs_read_block_device(const char *path, uint32_t sector, void *buffer)
+{
+    struct vfs_node *node = vfs_lookup(vfs_get_root(), path);
+    struct vfs_block_device *device;
+
+    if (node == 0 || buffer == 0 || !(node->flags & VFS_BLOCK_DEVICE))
+        return -1;
+
+    device = (struct vfs_block_device *)node->data;
+    if (device == 0 || sector >= device->sector_count)
+        return -1;
+
+    return ata_read_sector(device->start_lba + sector, buffer);
+}
+
+int vfs_write_block_device(const char *path, uint32_t sector,
+                           const void *buffer)
+{
+    struct vfs_node *node = vfs_lookup(vfs_get_root(), path);
+    struct vfs_block_device *device;
+
+    if (node == 0 || buffer == 0 || !(node->flags & VFS_BLOCK_DEVICE))
+        return -1;
+
+    device = (struct vfs_block_device *)node->data;
+    if (device == 0 || sector >= device->sector_count)
+        return -1;
+
+    return ata_write_sector(device->start_lba + sector, buffer);
+}
+
 int vfs_create_device(const char *path, uint32_t type) {
     struct vfs_node *node;
     struct vfs_node *parent;
@@ -724,6 +828,12 @@ void mount_essential_folders(void) {
             k_print("[VFS] Failed to create a tty device.\n");
             return;
         }
+    }
+    int partitions = vfs_scan_partitions();
+    if (partitions < 0) {
+        k_print("[VFS] Partition scan failed.\n");
+    } else if (partitions > 0) {
+        k_print("[VFS] Registered disk partitions as /dev/mdaX.\n");
     }
     k_print("[VFS] Mounted devtmpfs at /dev.\n");
 }
