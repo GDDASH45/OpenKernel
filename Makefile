@@ -415,7 +415,7 @@ oconf-tools: $(OCONF_PARSER) $(OCONF_BUILDER)
 olddefconfig: $(OCONF_PARSER)
 	@echo "OCONF: generating $(OCONF_CONFIG) from .Ocfg files"; \
 	set -eu; \
-	tmp_defaults=$(mktemp); \
+	tmp_defaults=$$(mktemp); \
 	tmp_unique=$$(mktemp); \
 	trap 'rm -f "$$tmp_defaults" "$$tmp_unique"' EXIT; \
 	find . -type f -name '*.Ocfg' \
