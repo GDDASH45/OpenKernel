@@ -8,6 +8,7 @@
 #define VFS_FILE      0x04
 #define VFS_MOUNTED   0x08
 #define VFS_BLOCK_DEVICE 0x10
+#define VFS_OPTICAL_DEVICE 0x20
 
 #define VFS_DEVICE_CONSOLE 1u
 #define VFS_DEVICE_NULL    2u
@@ -61,6 +62,7 @@ int vfs_console_write(const char *buffer, uint32_t size);
 int vfs_create_device(const char *path, uint32_t type);
 int vfs_read_block_device(const char *path, uint32_t sector, void *buffer);
 int vfs_write_block_device(const char *path, uint32_t sector, const void *buffer);
+int vfs_read_optical_block_device(const char *path, uint32_t block, void *buffer);
 int vfs_list_directory(const char *path, char *buffer, uint32_t capacity);
 int vfs_index_tar(uint32_t tar_address);
 
