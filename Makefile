@@ -418,10 +418,8 @@ olddefconfig: $(OCONF_PARSER)
 	tmp_defaults=$$(mktemp); \
 	tmp_unique=$$(mktemp); \
 	trap 'rm -f "$$tmp_defaults" "$$tmp_unique"' EXIT; \
-	find . -type f -name '*.Ocfg' \
-		-not -path './.git/*' \
-		-not -path './$(BUILD_DIR)/*' \
-		-exec awk '\
+	find . -type d \( -name '.git' -o -path './$(BUILD_DIR)' \) -prune -o \
+		-type f -name '*.Ocfg' -exec awk '\
 			function trim(s) { \
 				sub(/^[ \t]+/, "", s); \
 				sub(/[ \t\r]+$$/, "", s); \
