@@ -14,6 +14,8 @@
  * size. ISO directory metadata, file creation, deletion, and resizing remain
  * unsupported; ATAPI media are always read-only.
  */
+int iso9660_detect_device(void);
+int iso9660_read_device_block(uint32_t lba, void *buffer);
 int iso9660_mount(void);
 int iso9660_mount_image(uint32_t image_start_lba);
 int iso9660_is_mounted(void);
