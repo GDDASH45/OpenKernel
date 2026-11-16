@@ -138,3 +138,18 @@ Filesystem and storage code can use:
 The initial scanner supports the four primary MBR entries only. GPT and
 extended/logical partition discovery are not implemented. These device nodes
 represent partitions; they do not automatically mount the filesystem.
+
+
+## Optical drive device
+
+During devtmpfs initialization, OpenKernel probes the primary and secondary
+IDE channels for ATAPI PACKET devices. When an ATAPI CD-ROM drive responds,
+the VFS creates `/dev/sr0`, whether or not a readable disc is currently
+inserted. The node is read-only. The optical block API reads one 2048-byte
+CD-ROM logical block:
+
+- `vfs_read_optical_block_device("/dev/sr0", lba, buffer)`
+
+This device is detected from hardware presence; it is not inferred solely from
+the boot medium. If booting an ISO from USB or a virtual disk without an
+ATAPI optical drive, `/dev/sr0` is not created.
