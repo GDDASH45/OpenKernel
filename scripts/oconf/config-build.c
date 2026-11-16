@@ -54,7 +54,7 @@ static int mark_processed(const char *path)
 
     if (entry == NULL) {
         free(resolved);
-        fprintf(stderr, "oconf: out of memory tracking included files\\n");
+        fprintf(stderr, "oconf: out of memory tracking included files\n");
         return -1;
     }
 
@@ -401,8 +401,8 @@ static int process_ocfg(const char *path)
         if (strcmp(key, "include") == 0) {
             char include_path[PATH_SIZE];
 
-            if (*value == '\\0') {
-                fprintf(stderr, "oconf: empty include path in %s\\n", path);
+            if (*value == '\0') {
+                fprintf(stderr, "oconf: empty include path in %s\n", path);
                 fclose(file);
                 return -1;
             }
@@ -410,14 +410,14 @@ static int process_ocfg(const char *path)
             if (value[0] == '/') {
                 if (snprintf(include_path, sizeof(include_path), "%s",
                              value) >= (int)sizeof(include_path)) {
-                    fprintf(stderr, "oconf: include path too long\\n");
+                    fprintf(stderr, "oconf: include path too long\n");
                     fclose(file);
                     return -1;
                 }
             } else if (snprintf(include_path, sizeof(include_path),
                                 "%s/%s", directory, value)
                        >= (int)sizeof(include_path)) {
-                fprintf(stderr, "oconf: include path too long\\n");
+                fprintf(stderr, "oconf: include path too long\n");
                 fclose(file);
                 return -1;
             }
