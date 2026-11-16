@@ -2,7 +2,7 @@ CC = gcc
 AS = nasm
 AR = ar
 RANLIB = ranlib
-HOST_CC ?= cc
+HOST_CC ?= gcc
 
 RELVERSION   := 0
 SUBVERSION   := 2
