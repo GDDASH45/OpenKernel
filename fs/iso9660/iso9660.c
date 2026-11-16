@@ -535,6 +535,30 @@ static int iso_resolve(
     return 0;
 }
 
+int iso9660_detect_device(void)
+{
+    static const uint16_t channels[] = { 0x1F0, 0x170 };
+
+    atapi_device = -1;
+    for (int channel = 0; channel < 2; ++channel) {
+        for (int device = 0; device < 2; ++device) {
+            if (atapi_probe(channels[channel], device) == 0) {
+                atapi_device = device;
+                return 0;
+            }
+        }
+    }
+
+    return -1;
+}
+
+int iso9660_read_device_block(uint32_t lba, void *buffer)
+{
+    if (atapi_device < 0)
+        return -1;
+    return atapi_read_block(lba, buffer);
+}
+
 static int iso9660_mount_selected(void)
 {
     uint32_t lba;
@@ -554,19 +578,8 @@ static int iso9660_mount_selected(void)
     iso_joliet = 0;
     atapi_device = -1;
 
-    if (!iso_ata_image) {
-    for (channel = 0; channel < 2 && atapi_device < 0; ++channel) {
-        for (device = 0; device < 2; ++device) {
-            if (atapi_probe(channels[channel], device) == 0) {
-                atapi_device = device;
-                break;
-            }
-        }
-    }
-
-    if (atapi_device < 0)
+    if (!iso_ata_image && iso9660_detect_device() != 0)
         return -1;
-    }
 
     for (lba = 16; lba < 80; ++lba) {
         uint8_t *descriptor;
