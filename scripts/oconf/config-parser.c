@@ -14,7 +14,34 @@ struct config_line {
     char *text;
     char *symbol;
     struct config_line *next;
+    struct config_line *hash_next;
 };
+
+#define SYMBOL_HASH_SIZE 65536
+
+static struct config_line *symbol_index[SYMBOL_HASH_SIZE];
+
+static unsigned long symbol_hash(const char *symbol)
+{
+    unsigned long hash = 5381;
+
+    while (*symbol)
+        hash = ((hash << 5) + hash) ^ (unsigned char)*symbol++;
+
+    return hash % SYMBOL_HASH_SIZE;
+}
+
+static void index_symbol(struct config_line *entry)
+{
+    unsigned long bucket;
+
+    if (entry->symbol == NULL)
+        return;
+
+    bucket = symbol_hash(entry->symbol);
+    entry->hash_next = symbol_index[bucket];
+    symbol_index[bucket] = entry;
+}
 
 static void free_lines(struct config_line *head)
 {
@@ -129,13 +156,13 @@ static char *extract_symbol(const char *line)
     return NULL;
 }
 
-static int symbol_exists(
-    const struct config_line *head,
-    const char *symbol)
+static int symbol_exists(const char *symbol)
 {
-    for (; head != NULL; head = head->next) {
-        if (head->symbol != NULL &&
-            strcmp(head->symbol, symbol) == 0)
+    const struct config_line *entry;
+
+    for (entry = symbol_index[symbol_hash(symbol)];
+         entry != NULL; entry = entry->hash_next) {
+        if (strcmp(entry->symbol, symbol) == 0)
             return 1;
     }
 
@@ -377,6 +404,10 @@ static int olddefconfig(const char *config_path, const char *defaults_path)
     if (read_config(defaults_path, &defaults, &defaults_tail, 0) != 0)
         goto done;
 
+    /* Build a hash index once; avoid a full .config scan per default. */
+    for (entry = config; entry != NULL; entry = entry->next)
+        index_symbol(entry);
+
     for (entry = defaults; entry != NULL; entry = entry->next) {
         char *symbol = NULL;
         int valid;
@@ -392,7 +423,7 @@ static int olddefconfig(const char *config_path, const char *defaults_path)
         if (valid == 0)
             continue;
 
-        if (!symbol_exists(config, symbol)) {
+        if (!symbol_exists(symbol)) {
             char *default_line = strdup(entry->text);
 
             if (default_line == NULL ||
@@ -405,6 +436,7 @@ static int olddefconfig(const char *config_path, const char *defaults_path)
             }
 
             free(default_line);
+            index_symbol(config_tail);
         }
 
         free(symbol);
