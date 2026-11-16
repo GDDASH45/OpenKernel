@@ -848,9 +848,9 @@ void mount_essential_folders(void) {
             struct vfs_node *sr0 = vfs_create_node(
                 "sr0", VFS_FILE | VFS_DEVICE | VFS_OPTICAL_DEVICE, dev);
             if (sr0 != 0) {
-                k_print("[VFS] ATAPI CD-ROM available as /dev/sr0.\\n");
+                k_print("[VFS] ATAPI CD-ROM available as /dev/sr0.\n");
             } else {
-                k_print("[VFS] Could not create /dev/sr0.\\n");
+                k_print("[VFS] Could not create /dev/sr0.\n");
             }
         }
     }
