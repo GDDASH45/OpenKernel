@@ -1,0 +1,6 @@
+# Read-only ext4 filesystem support
+CONFIG=CONFIG_EXT4_FS
+
+DEFAULT=n
+
+SOURCE=ext4.c
