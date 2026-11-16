@@ -316,6 +316,48 @@ static int has_suffix(const char *name, const char *suffix)
            strcmp(name + name_len - suffix_len, suffix) == 0;
 }
 
+static int has_config_entry(const char *path)
+{
+    FILE *file = fopen(path, "r");
+    char line[LINE_SIZE];
+
+    if (file == NULL)
+        return -1;
+
+    while (fgets(line, sizeof(line), file)) {
+        char *key = line;
+        char *equals;
+        size_t length = strlen(line);
+
+        while (length > 0 &&
+               (line[length - 1] == '\n' || line[length - 1] == '\r' ||
+                line[length - 1] == ' ' || line[length - 1] == '\t'))
+            line[--length] = '\0';
+
+        while (*key == ' ' || *key == '\t')
+            key++;
+
+        if (*key == '\0' || *key == '#')
+            continue;
+
+        equals = strchr(key, '=');
+        if (equals != NULL && (size_t)(equals - key) == 6 &&
+            strncmp(key, "CONFIG", 6) == 0) {
+            fclose(file);
+            return 1;
+        }
+    }
+
+    if (ferror(file)) {
+        perror(path);
+        fclose(file);
+        return -1;
+    }
+
+    fclose(file);
+    return 0;
+}
+
 static int process_ocfg(const char *path, char *config,
                         int *source_count, int included)
 {
@@ -326,6 +368,19 @@ static int process_ocfg(const char *path, char *config,
     char *slash;
     int result;
     int already_processed;
+
+    /*
+     * A standalone .Ocfg without CONFIG is an include fragment. It is
+     * processed only when a CONFIG-bearing source tree includes it.
+     */
+    if (!included) {
+        int has_config = has_config_entry(path);
+
+        if (has_config < 0)
+            return -1;
+        if (has_config == 0)
+            return 0;
+    }
 
     already_processed = mark_processed(path);
 
