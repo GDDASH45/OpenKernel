@@ -27,6 +27,7 @@ struct ext4_state {
     uint32_t groups;
     uint32_t descriptor_size;
     uint64_t blocks_count;
+    uint32_t inodes_count;
     uint64_t descriptor_block;
     uint32_t feature_incompat;
     uint8_t mounted;
@@ -119,7 +120,7 @@ static int ext4_read_inode(uint32_t inode_number, struct ext4_inode *inode)
     uint8_t raw[EXT4_MAX_BLOCK_SIZE];
 
     if (!ext4.mounted || inode == 0 || inode_number == 0 ||
-        inode_number > ext4.groups * ext4.inodes_per_group ||
+        inode_number > ext4.inodes_count ||
         ext4.descriptor_size > sizeof(descriptor) ||
         ext4.inode_size > sizeof(raw))
         return -1;
@@ -176,6 +177,8 @@ static int ext4_extent_map(const struct ext4_inode *inode,
 
     entries = ext4_get16(header + 2);
     depth = ext4_get16(header + 6);
+    if (entries > 4)
+        return -1;
     if (depth > EXT4_MAX_DEPTH)
         return -1;
 
@@ -363,7 +366,7 @@ int ext4_mount(uint32_t partition_lba)
 {
     uint8_t super[1024];
     uint32_t log_block_size, incompat, first_data_block;
-    uint32_t descriptor_size;
+    uint32_t descriptor_size, block_groups, inode_groups;
 
     ext4.mounted = 0;
 
@@ -377,6 +380,7 @@ int ext4_mount(uint32_t partition_lba)
         return -1;
 
     ext4.block_size = 1024u << log_block_size;
+    ext4.inodes_count = ext4_get32(&super[0]);
     ext4.blocks_count = ext4_get32(&super[4]);
     ext4.blocks_count |= (uint64_t)ext4_get32(&super[336]) << 32;
     ext4.blocks_per_group = ext4_get32(&super[32]);
@@ -406,8 +410,14 @@ int ext4_mount(uint32_t partition_lba)
     ext4.partition_lba = partition_lba;
     ext4.feature_incompat = incompat;
     ext4.descriptor_size = descriptor_size;
-    ext4.groups = (uint32_t)((ext4.blocks_count - first_data_block +
+    if (ext4.blocks_count <= first_data_block || ext4.inodes_count == 0)
+        return -1;
+
+    block_groups = (uint32_t)((ext4.blocks_count - first_data_block +
                     ext4.blocks_per_group - 1) / ext4.blocks_per_group);
+    inode_groups = (ext4.inodes_count + ext4.inodes_per_group - 1) /
+                   ext4.inodes_per_group;
+    ext4.groups = block_groups > inode_groups ? block_groups : inode_groups;
     ext4.descriptor_block = first_data_block + 1u;
 
     if (ext4.groups == 0 || ext4.groups > 0x100000u)
