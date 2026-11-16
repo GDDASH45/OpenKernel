@@ -119,3 +119,22 @@ volume so that Unicode names are visible. Joliet UCS-2BE identifiers are
 converted to UTF-8 for the public API. Rock Ridge extensions, multi-extent
 files, writes, VFS integration, and file-descriptor syscalls are not
 implemented. ISO9660 support is independent of FAT16 and does not modify OKFS2.
+
+
+## Partition block devices
+
+The VFS scans the primary ATA disk's MBR during devtmpfs initialization.
+Each valid primary MBR partition is registered as `/dev/mda1` through
+`/dev/mda4`, using its MBR table slot. Registration does not depend on the
+partition's filesystem type, so unknown filesystem types are exposed too.
+
+Filesystem and storage code can use:
+
+- `vfs_read_block_device(path, sector, buffer)` to read one 512-byte sector
+  relative to a partition.
+- `vfs_write_block_device(path, sector, buffer)` to write one 512-byte sector
+  relative to a partition.
+
+The initial scanner supports the four primary MBR entries only. GPT and
+extended/logical partition discovery are not implemented. These device nodes
+represent partitions; they do not automatically mount the filesystem.
