@@ -192,6 +192,8 @@ static int ext4_extent_map(const struct ext4_inode *inode,
 
         for (uint32_t i = 0; i < entries; ++i) {
             entry = node + 12 + i * 12;
+            if (i == 0 && logical < ext4_get32(entry))
+                return -1;
             if (i == 0 || ext4_get32(entry) <= logical) {
                 selected = i;
                 selected_key = ext4_get32(entry);
@@ -227,11 +229,12 @@ static int ext4_extent_map(const struct ext4_inode *inode,
         const uint8_t *entry = node + 12 + i * 12;
         uint32_t first = ext4_get32(entry);
         uint16_t raw_length = ext4_get16(entry + 4);
-        uint32_t length = raw_length & 0x7FFFu;
+        uint32_t length = raw_length > 0x8000u ?
+                          raw_length - 0x8000u : raw_length;
         uint64_t start = ext4_get32(entry + 8) |
                          ((uint64_t)ext4_get16(entry + 6) << 32);
 
-        if (raw_length & 0x8000u)
+        if (raw_length > 0x8000u || length == 0)
             return -1;
         if (logical >= first && logical - first < length) {
             *physical = start + (logical - first);
@@ -404,7 +407,8 @@ int ext4_mount(uint32_t partition_lba)
 
     if (descriptor_size == 0)
         descriptor_size = 32;
-    if (descriptor_size < 32 || descriptor_size > 64)
+    if (descriptor_size < 32 || descriptor_size > 64 ||
+        ((incompat & EXT4_FEATURE_INCOMPAT_64BIT) && descriptor_size < 64))
         return -1;
 
     ext4.partition_lba = partition_lba;
