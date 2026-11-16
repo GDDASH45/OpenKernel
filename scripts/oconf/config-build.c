@@ -316,15 +316,14 @@ static int has_suffix(const char *name, const char *suffix)
            strcmp(name + name_len - suffix_len, suffix) == 0;
 }
 
-static int process_ocfg(const char *path)
+static int process_ocfg(const char *path, char *config,
+                        int *source_count, int included)
 {
     FILE *file;
     char line[LINE_SIZE];
-    char config[256] = "";
     char directory[PATH_SIZE];
     char source_path[PATH_SIZE];
     char *slash;
-    int source_count = 0;
     int result;
     int already_processed;
 
@@ -422,11 +421,27 @@ static int process_ocfg(const char *path)
                 return -1;
             }
 
-            if (process_ocfg(include_path) != 0) {
+            if (config[0] == '\0') {
+                fprintf(stderr,
+                        "oconf: CONFIG must be set before include in %s\n",
+                        path);
+                fclose(file);
+                return -1;
+            }
+
+            if (process_ocfg(include_path, config, source_count, 1) != 0) {
                 fclose(file);
                 return -1;
             }
         } else if (strcmp(key, "CONFIG") == 0) {
+            if (included) {
+                fprintf(stderr,
+                        "oconf: CONFIG is not allowed in included source tree %s\n",
+                        path);
+                fclose(file);
+                return -1;
+            }
+
             if (strncmp(value, "CONFIG_", 7) != 0) {
                 fprintf(stderr,
                         "oconf: invalid CONFIG symbol in %s: %s\n",
@@ -480,7 +495,7 @@ static int process_ocfg(const char *path)
                     return -1;
                 }
 
-                source_count++;
+                (*source_count)++;
             }
         } else {
             fprintf(stderr,
@@ -499,20 +514,22 @@ static int process_ocfg(const char *path)
 
     fclose(file);
 
-    if (config[0] == '\0') {
-        fprintf(stderr, "oconf: missing CONFIG entry in %s\n", path);
-        return -1;
+    if (!included) {
+        if (config[0] == '\0') {
+            fprintf(stderr, "oconf: missing CONFIG entry in %s\n", path);
+            return -1;
+        }
+
+        result = enabled(config);
+
+        if (result < 0)
+            return -1;
+
+        if (result == 0)
+            printf("  SKIP    %s is not enabled\n", config);
+        else if (*source_count == 0)
+            printf("  NOTE    %s has no SOURCE entries\n", config);
     }
-
-    result = enabled(config);
-
-    if (result < 0)
-        return -1;
-
-    if (result == 0)
-        printf("  SKIP    %s is not enabled\n", config);
-    else if (source_count == 0)
-        printf("  NOTE    %s has no SOURCE entries\n", config);
 
     return 0;
 }
@@ -565,7 +582,10 @@ static int scan_directory(const char *directory)
             }
         } else if (S_ISREG(st.st_mode) &&
                    has_suffix(entry->d_name, ".Ocfg")) {
-            if (process_ocfg(path) != 0) {
+            char config[256] = "";
+            int source_count = 0;
+
+            if (process_ocfg(path, config, &source_count, 0) != 0) {
                 result = -1;
                 break;
             }
