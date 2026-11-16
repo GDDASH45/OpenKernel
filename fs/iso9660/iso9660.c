@@ -562,8 +562,6 @@ int iso9660_read_device_block(uint32_t lba, void *buffer)
 static int iso9660_mount_selected(void)
 {
     uint32_t lba;
-    int device;
-    int channel;
     int have_primary = 0;
     int have_joliet = 0;
     uint32_t primary_volume_sectors = 0;
@@ -572,8 +570,6 @@ static int iso9660_mount_selected(void)
     uint32_t joliet_volume_sectors = 0;
     uint32_t joliet_root_lba = 0;
     uint32_t joliet_root_size = 0;
-    static const uint16_t channels[] = { 0x1F0, 0x170 };
-
     iso_mounted = 0;
     iso_joliet = 0;
     atapi_device = -1;
