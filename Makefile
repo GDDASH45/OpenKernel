@@ -55,6 +55,7 @@ HOST_CFLAGS = -std=gnu99 -O2 -Wall -Wextra -Iinclude
 MKFS_TOOLS = tools/mkfs.kfs tools/mkfs.okfs tools/mkfs.sokfs
 OCONF_CFLAGS = -std=c11 -O2 -Wall -Wextra -Werror
 
+ifeq ($(filter configured-build,$(MAKECMDGOALS)),configured-build)
 # Find every .Ocfg file in the repository.
 OCONF_FILES = $(shell find . -type f -name "*.Ocfg" \
 	-not -path "./.git/*" \
@@ -134,6 +135,17 @@ ASM_SOURCES = $(shell find . -name "*.asm" \
 
 C_OBJECTS = $(patsubst ./%.c,$(BUILD_DIR)/c/%.o,$(C_SOURCES))
 ASM_OBJECTS = $(patsubst ./%.asm,$(BUILD_DIR)/asm/%.o,$(ASM_SOURCES))
+
+else
+OCONF_FILES =
+OCONF_ALL_SOURCES =
+OCONF_ENABLED_SOURCES =
+ALL_C_SOURCES =
+C_SOURCES =
+ASM_SOURCES =
+C_OBJECTS =
+ASM_OBJECTS =
+endif
 
 # kernel/entry.asm provides the Multiboot entry point.
 ENTRY_ASM = kernel/entry.asm
@@ -233,6 +245,7 @@ endef
 
 $(foreach obj,$(ASM_OBJECTS),$(eval $(call ASM_OBJECT_ALIAS,$(obj))))
 
+ifeq ($(filter configured-build,$(MAKECMDGOALS)),configured-build)
 # Directory targets build every object below the requested source directory.
 # Example: make lib/ builds lib/*.c, lib/**/*.c, and matching NASM sources.
 SOURCE_DIRS = $(shell find . -mindepth 1 -type d \
@@ -246,6 +259,8 @@ $(1)/: $(filter $(BUILD_DIR)/c/$(1)/%,$(C_OBJECTS)) \
 endef
 
 $(foreach dir,$(SOURCE_DIRS),$(eval $(call SOURCE_DIR_RULE,$(dir))))
+
+endif
 
 # Compile loadable module objects.
 $(MOD_DIR)/%.mo: modules/%.c $(VERSION_HEADER)
@@ -398,8 +413,9 @@ oconf-tools: $(OCONF_PARSER) $(OCONF_BUILDER)
 # Generate configuration defaults from all .Ocfg files.
 # Preserve existing .config values and default new options to n.
 olddefconfig: $(OCONF_PARSER)
-	@set -eu; \
-	tmp_defaults=$$(mktemp); \
+	@echo "OCONF: generating $(OCONF_CONFIG) from .Ocfg files"; \
+	set -eu; \
+	tmp_defaults=$(mktemp); \
 	tmp_unique=$$(mktemp); \
 	trap 'rm -f "$$tmp_defaults" "$$tmp_unique"' EXIT; \
 	find . -type f -name '*.Ocfg' \
