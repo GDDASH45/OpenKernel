@@ -26,6 +26,58 @@ struct config_symbol {
 
 static struct config_symbol *config_symbols[CONFIG_HASH_SIZE];
 
+struct processed_file {
+    char *path;
+    struct processed_file *next;
+};
+
+static struct processed_file *processed_files;
+
+static int mark_processed(const char *path)
+{
+    char *resolved = realpath(path, NULL);
+    struct processed_file *entry;
+
+    if (resolved == NULL) {
+        perror(path);
+        return -1;
+    }
+
+    for (entry = processed_files; entry != NULL; entry = entry->next) {
+        if (strcmp(entry->path, resolved) == 0) {
+            free(resolved);
+            return 1;
+        }
+    }
+
+    entry = malloc(sizeof(*entry));
+
+    if (entry == NULL) {
+        free(resolved);
+        fprintf(stderr, "oconf: out of memory tracking included files\\n");
+        return -1;
+    }
+
+    entry->path = resolved;
+    entry->next = processed_files;
+    processed_files = entry;
+    return 0;
+}
+
+static void free_processed_files(void)
+{
+    struct processed_file *entry = processed_files;
+
+    while (entry != NULL) {
+        struct processed_file *next = entry->next;
+        free(entry->path);
+        free(entry);
+        entry = next;
+    }
+
+    processed_files = NULL;
+}
+
 static unsigned long config_hash(const char *name)
 {
     unsigned long hash = 5381;
@@ -274,6 +326,16 @@ static int process_ocfg(const char *path)
     char *slash;
     int source_count = 0;
     int result;
+    int already_processed;
+
+    already_processed = mark_processed(path);
+
+    if (already_processed < 0)
+        return -1;
+
+    /* Includes may be encountered again by the directory scanner. */
+    if (already_processed > 0)
+        return 0;
 
     file = fopen(path, "r");
 
@@ -336,7 +398,35 @@ static int process_ocfg(const char *path)
         while (*value == ' ' || *value == '\t')
             value++;
 
-        if (strcmp(key, "CONFIG") == 0) {
+        if (strcmp(key, "include") == 0) {
+            char include_path[PATH_SIZE];
+
+            if (*value == '\\0') {
+                fprintf(stderr, "oconf: empty include path in %s\\n", path);
+                fclose(file);
+                return -1;
+            }
+
+            if (value[0] == '/') {
+                if (snprintf(include_path, sizeof(include_path), "%s",
+                             value) >= (int)sizeof(include_path)) {
+                    fprintf(stderr, "oconf: include path too long\\n");
+                    fclose(file);
+                    return -1;
+                }
+            } else if (snprintf(include_path, sizeof(include_path),
+                                "%s/%s", directory, value)
+                       >= (int)sizeof(include_path)) {
+                fprintf(stderr, "oconf: include path too long\\n");
+                fclose(file);
+                return -1;
+            }
+
+            if (process_ocfg(include_path) != 0) {
+                fclose(file);
+                return -1;
+            }
+        } else if (strcmp(key, "CONFIG") == 0) {
             if (strncmp(value, "CONFIG_", 7) != 0) {
                 fprintf(stderr,
                         "oconf: invalid CONFIG symbol in %s: %s\n",
@@ -505,10 +595,12 @@ int main(int argc, char **argv)
 
     if (scan_directory(root) != 0) {
         free_config();
+        free_processed_files();
         return EXIT_FAILURE;
     }
 
     free_config();
+    free_processed_files();
     printf("oconf: configuration build complete\n");
     return EXIT_SUCCESS;
 }
