@@ -71,6 +71,9 @@ static int device_read(struct vfs_node *node, char *buffer, uint32_t size) {
     if (type == VFS_DEVICE_NULL || type == VFS_DEVICE_CONSOLE) {
         return 0;
     }
+    if (type == VFS_DEVICE_KMSG) {
+        return kmsg_read(buffer, size);
+    }
     if (type == VFS_DEVICE_UPTIME) {
         uint32_t used;
         if (size == 0) return 0;
@@ -830,6 +833,7 @@ void mount_essential_folders(void) {
         vfs_create_device("/dev/full", VFS_DEVICE_FULL) != 0 ||
         vfs_create_device("/dev/urandom", VFS_DEVICE_URANDOM) != 0 ||
         vfs_create_device("/dev/uptime", VFS_DEVICE_UPTIME) != 0 ||
+        vfs_create_device("/dev/kmsg", VFS_DEVICE_KMSG) != 0 ||
         vfs_create_device("/dev/fb0", VFS_DEVICE_CONSOLE) != 0) {
         k_print("[VFS] Failed to populate devtmpfs.\n");
         return;
