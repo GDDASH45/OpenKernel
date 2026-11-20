@@ -4,7 +4,7 @@ OpenKernel implements 32-bit virtual KASLR while retaining its existing Multiboo
 
 ## Boot behavior
 
-KASLR is enabled by default. The loader decompresses and validates the linked ELF image, keeps its loadable segments at their normal physical addresses beginning at 0x00400000, chooses a randomized virtual base, applies the ELF relocation records, installs a temporary page directory, and jumps to the relocated virtual entry point.
+KASLR is disabled by default so the kernel follows the fixed-address boot path unless randomization is explicitly requested. The loader decompresses and validates the linked ELF image, keeps its loadable segments at their normal physical addresses beginning at 0x00400000, chooses a randomized virtual base, applies the ELF relocation records, installs a temporary page directory, and jumps to the relocated virtual entry point when KASLR is enabled.
 
 The randomized kernel virtual window is 0x40000000 through 0xBFFFFFFF. The base is selected in 4 MiB increments, preserving compatibility with the kernel's current 4 MiB page mappings. The user virtual range still begins at 0xC0000000.
 
@@ -28,9 +28,11 @@ During physical-memory initialization, the kernel rebuilds its page directory wi
 
 ## Boot options
 
+- kaslr enables randomization.
+- kaslr=on enables randomization.
 - nokaslr disables randomization.
 - kaslr=off disables randomization.
-- With neither option, randomization is attempted by default.
+- With neither option, randomization remains disabled.
 
 The kernel reports its actual runtime virtual base and slide after physical-memory initialization. A zero slide means the image remained at its link address, either because KASLR was disabled or because no safe virtual range was found.
 
