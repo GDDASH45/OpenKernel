@@ -19,6 +19,7 @@
 #define VFS_DEVICE_FULL 7u
 #define VFS_DEVICE_URANDOM 8u
 #define VFS_DEVICE_UPTIME 9u
+#define VFS_DEVICE_KMSG 10u
 
 #define VFS_MAX_PATH 256
 #define VFS_NAME_SIZE 64
