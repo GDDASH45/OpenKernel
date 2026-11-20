@@ -5,6 +5,41 @@ static int cursor_row = 0;
 static int cursor_col = 0;
 static int quiet_mode;
 
+#define KMSG_BUFFER_SIZE 16384u
+
+static char kmsg_buffer[KMSG_BUFFER_SIZE];
+static uint32_t kmsg_head;
+static uint32_t kmsg_tail;
+static uint32_t kmsg_count;
+
+static void kmsg_append_char(char c)
+{
+    kmsg_buffer[kmsg_head] = c;
+    kmsg_head = (kmsg_head + 1u) % KMSG_BUFFER_SIZE;
+
+    if (kmsg_count == KMSG_BUFFER_SIZE) {
+        kmsg_tail = (kmsg_tail + 1u) % KMSG_BUFFER_SIZE;
+    } else {
+        kmsg_count++;
+    }
+}
+
+int kmsg_read(char *buffer, uint32_t size)
+{
+    uint32_t copied = 0;
+
+    if (buffer == 0 && size != 0)
+        return -1;
+
+    while (copied < size && kmsg_count != 0) {
+        buffer[copied++] = kmsg_buffer[kmsg_tail];
+        kmsg_tail = (kmsg_tail + 1u) % KMSG_BUFFER_SIZE;
+        kmsg_count--;
+    }
+
+    return (int)copied;
+}
+
 #define VGA_ADDRESS 0xB8000
 #define MAX_ROWS 25
 #define MAX_COLS 80
@@ -45,6 +80,11 @@ void k_clear_screen(void) {
 }
 
 void k_print_char(char c) {
+    kmsg_append_char(c);
+
+    if (quiet_mode)
+        return;
+
     if (fbcon_is_active()) {
         fbcon_put_char(c);
         return;
@@ -79,9 +119,9 @@ void k_print_char(char c) {
 }
 
 void k_print(const char *str) {
-    if (quiet_mode) {
+    if (str == 0)
         return;
-    }
+
     int i = 0;
     while (str[i] != '\0') {
         k_print_char(str[i]);
