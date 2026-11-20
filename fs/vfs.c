@@ -629,7 +629,7 @@ int vfs_create_device(const char *path, uint32_t type) {
          type != VFS_DEVICE_ZERO && type != VFS_DEVICE_RANDOM &&
          type != VFS_DEVICE_KEYBOARD && type != VFS_DEVICE_NETWORK &&
          type != VFS_DEVICE_FULL && type != VFS_DEVICE_URANDOM &&
-         type != VFS_DEVICE_UPTIME)) {
+         type != VFS_DEVICE_UPTIME && type != VFS_DEVICE_KMSG)) {
         return -1;
     }
     while (path[path_length] != '\0' && path_length < sizeof(parent_path)) {
