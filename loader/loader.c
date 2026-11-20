@@ -706,12 +706,19 @@ static int kaslr_is_disabled(const struct multiboot_info *boot_info) {
     const char *line;
     uint32_t index = 0;
 
+    /*
+     * Keep the boot path deterministic unless KASLR is explicitly requested.
+     * The loader's temporary 4 MiB page-table transition is optional; kernels
+     * without a KASLR command-line option must retain their link address.
+     */
     if ((boot_info->flags & (1u << 2)) == 0 || boot_info->cmdline == 0)
-        return 0;
+        return 1;
+
     line = (const char *)(uintptr_t)boot_info->cmdline;
     while (index < 4096u && line[index] != '\0') {
         uint32_t start;
         uint32_t length;
+
         while (index < 4096u &&
                (line[index] == ' ' || line[index] == '\t'))
             index++;
@@ -720,6 +727,7 @@ static int kaslr_is_disabled(const struct multiboot_info *boot_info) {
                line[index] != ' ' && line[index] != '\t')
             index++;
         length = index - start;
+
         if ((length == 7u &&
              line[start] == 'n' && line[start + 1] == 'o' &&
              line[start + 2] == 'k' && line[start + 3] == 'a' &&
@@ -732,8 +740,20 @@ static int kaslr_is_disabled(const struct multiboot_info *boot_info) {
              line[start + 6] == 'o' && line[start + 7] == 'f' &&
              line[start + 8] == 'f'))
             return 1;
+
+        if ((length == 5u &&
+             line[start] == 'k' && line[start + 1] == 'a' &&
+             line[start + 2] == 's' && line[start + 3] == 'l' &&
+             line[start + 4] == 'r') ||
+            (length == 8u &&
+             line[start] == 'k' && line[start + 1] == 'a' &&
+             line[start + 2] == 's' && line[start + 3] == 'l' &&
+             line[start + 4] == 'r' && line[start + 5] == '=' &&
+             line[start + 6] == 'o' && line[start + 7] == 'n'))
+            return 0;
     }
-    return 0;
+
+    return 1;
 }
 
 static uint32_t choose_kernel_slide(const struct multiboot_info *boot_info,
