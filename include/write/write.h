@@ -9,6 +9,7 @@
 void k_clear_screen(void);
 void k_print_char(char c);
 void k_print(const char *str);
+int kmsg_read(char *buffer, unsigned int size);
 void k_set_quiet(int quiet);
 void printk(const char *format, ...);
 
