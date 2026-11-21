@@ -30,3 +30,4 @@ tools/mkfs.okfs
 tools/mkfs.sokfs
 
 /privatebfs.sh
+*.p.sh
