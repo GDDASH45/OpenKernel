@@ -25,6 +25,9 @@
 #include <kernel/vdso.h>
 #include <kernel/kaslr.h>
 #include <kernel/pci.h>
+#include <kernel/metadata.h>
+
+EXPORT_METADATA(license, "GPL3.0");
 
 // Fix Undefined errors
 #ifndef NULL

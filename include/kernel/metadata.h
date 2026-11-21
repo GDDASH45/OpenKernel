@@ -11,4 +11,8 @@ extern const char *msg_panic_default;
 
 extern const char *shell_prompt;
 
+#define EXPORT_METADATA(name, value) \
+    __attribute__((used, section(".metadata"))) \
+    static const char metadata_##name[] = value
+
 #endif
